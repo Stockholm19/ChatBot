@@ -7,7 +7,6 @@ Package.resolved
 
 # Файлы Xcode
 # Игнорируем весь Xcode проект, если используем Swift Package Manager
-# Если вы хотите сохранить .xcodeproj в Git, закомментируйте эту строку
 *.xcodeproj/
 *.xcworkspace/
 xcuserdata/
@@ -15,10 +14,10 @@ xcuserdata/
 # Файлы операционной системы
 .DS_Store
 
-# Файлы баз данных (их не хранят в Git)
+# Файлы баз данных
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
 
-# Файлы с секретными данными (если будешь использовать)
+# Файлы с секретными данными
 .env
