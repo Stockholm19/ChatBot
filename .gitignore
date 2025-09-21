@@ -5,20 +5,21 @@
 .swiftpm/
 Package.resolved
 
-# Файлы Xcode
-# Игнорируем весь Xcode проект, если используем Swift Package Manager
-# Если вы хотите сохранить .xcodeproj в Git, закомментируйте эту строку
+# Файлы Xcode (если не нужен .xcodeproj)
 *.xcodeproj/
 *.xcworkspace/
 xcuserdata/
 
-# Файлы операционной системы
+# Файлы операционной системы и IDE
 .DS_Store
+.vscode/
+.idea/
+*.swp
 
 # Файлы баз данных (их не хранят в Git)
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
 
-# Файлы с секретными данными (если будешь использовать)
+# Файлы с секретными данными
 .env

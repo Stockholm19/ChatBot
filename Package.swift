@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "kudos-vapor",
     platforms: [
-        .macOS(.v13) // Указываем, что проект для macOS 13 или новее
+        .macOS(.v13)
     ],
     dependencies: [
         .package(url: "https://github.com/vapor/vapor.git", from: "4.90.0"),
