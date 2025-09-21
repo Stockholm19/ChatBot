@@ -16,7 +16,7 @@ xcuserdata/
 .idea/
 *.swp
 
-# Файлы баз данных (их не хранят в Git)
+# Файлы баз данных
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
