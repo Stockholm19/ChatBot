@@ -3,7 +3,7 @@
 
 # Файлы Swift Package Manager
 .swiftpm/
-Package.resolved
+
 
 # Файлы Xcode (если не нужен .xcodeproj)
 *.xcodeproj/
