@@ -35,6 +35,9 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
+          # ✅ включаем кэш слоёв через GitHub Actions cache
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     needs: build-and-push
@@ -77,6 +80,7 @@ jobs:
 
             mkdir -p exports
 
+            # логинимся в Docker Hub на VPS, чтобы не упереться в rate limit
             echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
 
             docker compose -f docker-compose.prod.yml pull
