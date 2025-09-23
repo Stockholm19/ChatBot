@@ -16,9 +16,8 @@ FROM ubuntu:22.04
 WORKDIR /run
 
 # Минимум зависимостей для бинарника
-# (для SQLite нужен libsqlite3-0; для Postgres это можно удалить)
 RUN apt-get update && apt-get install -y \
-    libsqlite3-0 ca-certificates tzdata \
+    ca-certificates tzdata curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Кладём бинарник
