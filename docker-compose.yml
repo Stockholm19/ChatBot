@@ -1,20 +1,28 @@
+version: "3.9"
 services:
-  kudos-bot:
-    build: .
-    container_name: kudos-bot
-    env_file:
-      - .env
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kudos}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
-      - kudos_db:/data
-      - ./exports:/exports
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-kudos}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      BOT_TOKEN: ${BOT_TOKEN}
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "8080:8080"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-
 volumes:
-  kudos_db:
+  pgdata:

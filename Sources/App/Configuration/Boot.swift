@@ -7,11 +7,14 @@
 
 import Vapor
 import Fluent
-import FluentSQLiteDriver   // пока SQLite, но потом замени на Postgres
+import FluentPostgresDriver
 
 public func configure(_ app: Application) throws {
-    // Настройка базы данных: файл хранится в /data (совпадает с docker-compose volume)
-    app.databases.use(.sqlite(.file("/data/kudos.sqlite")), as: .sqlite)
+    
+    // PostgreSQL через DATABASE_URL
+    let url = Environment.get("DATABASE_URL")
+    ?? "postgresql://postgres:postgres@localhost:5432/kudos?sslmode=disable"
+    try app.databases.use(.postgres(url: url), as: .psql)
 
     // Регистрация миграций
     migrations(app)
