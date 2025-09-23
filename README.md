@@ -44,6 +44,7 @@ Kudos Bot — это Telegram-бот на **Swift (Vapor)** для отправ�
 - [Vapor 4](https://vapor.codes)
 - Fluent ORM (с драйвером SQLite)
 - Docker & Docker Compose
+- GitHub Actions (CI/CD)
 
 ## Данные и выгрузки
 - База данных (kudos.sqlite) хранится в отдельном volume (kudos_db).
