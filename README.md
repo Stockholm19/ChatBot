@@ -95,13 +95,20 @@ sudo chmod 600 .env
 
 ### Переменные окружения (.env)
 
-Обязательные:
+Создайте файл `.env` со всеми необходимыми переменными:
 ```env
+# Токен Telegram-бота
 BOT_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
 
-Опциональные (пример):
-```env
+# База данных (локально через Docker Compose)
+POSTGRES_DB=kudos
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
+
+# Дополнительно
 LOG_LEVEL=info
 STORAGE_DIR=/exports
 ```
