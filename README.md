@@ -129,13 +129,24 @@ docker compose -f docker-compose.prod.yml logs --tail 200
 ```
 
 ### Роллбек версии
+Если после деплоя что-то сломалось, можно откатиться на предыдущий рабочий образ:
 
-В логе Actions виден тег образа с SHA. На VPS:
-```bash
-docker pull helsinki253/kudos-bot:<SHA>
-# при необходимости изменить image: в docker-compose.prod.yml на точный тег
-docker compose -f docker-compose.prod.yml up -d
-```
+1. Найдите в [GitHub Actions](../../actions) номер коммита (SHA), для которого собирался Docker-образ.
+2. На VPS подтяните нужный образ:
+   ```bash
+   docker pull helsinki253/kudos-bot:<SHA>
+   ```
+   
+3. В docker-compose.prod.yml укажите этот тег:
+   ```
+   image: helsinki253/kudos-bot:<SHA>
+   ```
+   
+4. Примените изменения:
+   ```
+   docker compose -f docker-compose.prod.yml up -d
+   ```
+
 
 
 
