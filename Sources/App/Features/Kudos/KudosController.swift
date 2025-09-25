@@ -13,80 +13,49 @@ import NIOCore
 // MARK: - Бизнес-логика бота
 
 enum BotController {
+    
     /// Обработка одного входящего сообщения Telegram
     static func handle(app: Application, message m: TgMessage, api: String, sessions: SessionStore) async {
-        let chat = m.chat.id
+        let chatId = m.chat.id
         let text = (m.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Базовые команды
-        switch true {
-        case text == "/start":
-            await TelegramService.sendMessage(app, api: api, chatId: chat,
-                                              text: "Привет! Команды:\n/thanks — поблагодарить коллегу\n/export — выгрузка CSV")
+        // 1) /start → показываем главное меню
+        if text == "/start" {
+            await BotMenuController.handleStart(app: app, api: api, chatId: chatId, sessions: sessions)
             return
-
-        case text == "/export":
-            do {
-                // Экспортируем все записи в CSV и отправляем одним файлом
-                let path = "kudos_export.csv"
-                try await CSVExporter.exportKudos(db: app.db, to: path)
-                try await TelegramService.sendDocument(app, api: api, chatId: chat, filePath: path, caption: "Экспорт благодарностей")
-            } catch {
-                await TelegramService.sendMessage(app, api: api, chatId: chat, text: "Экспорт не удался: \(error.localizedDescription)")
-            }
-            return
-
-        case text == "/thanks":
-            // Запускаем пошаговый сценарий: сначала ждём @username, затем причину
-            await sessions.set(chat, Session(to: nil))
-            await TelegramService.sendMessage(app, api: api, chatId: chat,
-                                              text: "Кому сказать спасибо? Пришли @username, затем одним сообщением причину (≥ 20 символов).")
-            return
-
-        default:
-            break
         }
 
-        // Пошаговый сценарий: 1) пользователь присылает @username
-        if text.hasPrefix("@") {
-            if var s = await sessions.get(chat), s.to == nil {
-                s.to = text
-                await sessions.set(chat, s)
-                await TelegramService.sendMessage(app, api: api, chatId: chat,
-                                                  text: "Ок, \(text). Теперь пришли причину (≥ 20 символов).")
-                return
-            }
-        }
-
-        // Пошаговый сценарий: 2) если username уже известен, и текст достаточно длинный — записываем спасибо
-        if let s = await sessions.get(chat), let to = s.to, text.count >= 20 {
-            let fromUsername = m.from?.username.map { "@\($0)" } ?? "\(m.from?.id ?? 0)"
-            let fromName = [m.from?.first_name, m.from?.last_name].compactMap { $0 }.joined(separator: " ")
-
-            let k = Kudos(
-                ts: Date(),
-                fromUserId: m.from?.id ?? 0,
-                fromUsername: fromUsername,
-                fromName: fromName.isEmpty ? "—" : fromName,
-                toUsername: to,
-                reason: text
-            )
-
-            do {
-                try await k.create(on: app.db)
-                await sessions.set(chat, nil) // очищаем сессию
-                await TelegramService.sendMessage(app, api: api, chatId: chat, text: "Готово! Записал спасибо для \(to).")
-            } catch {
-                await TelegramService.sendMessage(app, api: api, chatId: chat, text: "Ошибка записи: \(error.localizedDescription)")
-            }
-        }
+        // 2) Весь остальной текст → отдаём в BotMenu (главное меню, подменю, шаги сценария)
+        await BotMenuController.handleText(
+            app: app,
+            api: api,
+            chatId: chatId,
+            username: m.from?.username,
+            text: text,
+            sessions: sessions,
+            db: app.db
+        )
+        return
     }
 }
 
 // MARK: - Telegram API helper
 
 public enum TelegramService {
-    /// Бесконечный поллинг Telegram getUpdates (long polling)
+    
+    // Запуск цикла опроса Telegram API
+    /**
+     Запускает бесконечный цикл опроса Telegram API (`getUpdates`).
+
+     - Параметры:
+       - app: текущее приложение Vapor
+       - sessions: хранилище сессий пользователей
+
+     - Что делает:
+       - забирает новые апдейты из Telegram
+       - передаёт их в `BotController.handle`
+       - при ошибке сети делает паузу и пробует снова
+     */
     public static func poll(app: Application, sessions: SessionStore) async {
         guard let token = Environment.get("BOT_TOKEN") else {
             app.logger.critical("BOT_TOKEN is not set")
@@ -103,7 +72,6 @@ public enum TelegramService {
                 let res = try await app.client.get(url)
                 let payload = try res.content.decode(TgResp<[TgUpdate]>.self)
 
-                // Обрабатываем новые апдейты
                 for u in payload.result {
                     offset = u.update_id + 1
                     if let m = u.message {
@@ -112,19 +80,81 @@ public enum TelegramService {
                 }
             } catch {
                 app.logger.report(error: error)
-                // Небольшая задержка, чтобы не крутить цикл при ошибке сети/Telegram
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
     }
 
-    /// Отправка текстового сообщения
-    public static func sendMessage(_ app: Application, api: String, chatId: Int64, text: String) async {
-        _ = try? await app.client.post("\(api)/sendMessage") { req in
-            try req.content.encode(
-                ["chat_id": "\(chatId)", "text": text, "parse_mode": "HTML"],
-                as: .json
-            )
+
+    
+    // Структура полезной нагрузки для Telegram API sendMessage
+    /**
+     Эта структура описывает JSON, который Telegram ожидает
+     при вызове метода `sendMessage`.
+
+     - Параметры:
+       - chat_id: идентификатор чата (Int64), куда отправляем сообщение
+       - text: сам текст сообщения
+       - parse_mode: режим форматирования текста ("HTML", "Markdown" или nil)
+       - reply_markup: объект клавиатуры (опционально), чтобы показать кнопки
+     */
+    private struct SendMessagePayload: Content {
+        let chat_id: Int64
+        let text: String
+        let parse_mode: String?
+        let reply_markup: TgReplyKeyboard?
+    }
+
+    // Отправка текстового сообщения в чат
+    /**
+     Метод отправляет текстовое сообщение через Telegram API `sendMessage`.
+
+     - Параметры:
+       - app: текущее приложение Vapor
+       - api: базовый URL Telegram API (с токеном)
+       - chatId: идентификатор чата, куда нужно отправить сообщение
+       - text: текст сообщения
+       - replyMarkup: (опционально) объект клавиатуры `TgReplyKeyboard`, если нужно показать кнопки
+
+     - Особенности:
+       - По умолчанию используется `parse_mode = "HTML"`, чтобы можно было выделять текст жирным, курсивом и вставлять ссылки.
+       - Если передан `replyMarkup`, вместе с сообщением отобразится кастомная клавиатура.
+
+     - Примеры:
+       ```swift
+       // простое сообщение
+       await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Привет!")
+
+       // сообщение с клавиатурой
+       await TelegramService.sendMessage(
+           app,
+           api: api,
+           chatId: chatId,
+           text: "Выберите действие:",
+           replyMarkup: KeyboardBuilder.mainMenu()
+       )
+       ```
+    */
+    
+    static func sendMessage(
+        _ app: Application,
+        api: String,
+        chatId: Int64,
+        text: String,
+        replyMarkup: TgReplyKeyboard? = nil
+    ) async {
+        let payload = SendMessagePayload(
+            chat_id: chatId,
+            text: text,
+            parse_mode: "HTML",        // включаем HTML-разметку (жирный, курсив и т.п.)
+            reply_markup: replyMarkup  // клавиатура, если она передана
+        )
+        do {
+            _ = try await app.client.post("\(api)/sendMessage") { req in
+                try req.content.encode(payload, as: .json) // сериализация в JSON
+            }
+        } catch {
+            app.logger.error("sendMessage failed: \(error.localizedDescription)")
         }
     }
 
