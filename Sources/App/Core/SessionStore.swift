@@ -8,15 +8,25 @@
 
 import Foundation
 
-/// Состояние диалога для конкретного чата (например, кому сказать спасибо).
-public struct Session {
-    public var to: String?
-    public init(to: String? = nil) { self.to = to }
+/// 1. Возможные состояния диалога (в каком месте меню/сценария находится пользователь)
+public enum SessionState: String, Codable {
+    case mainMenu
+    case thanksMenu
+    case awaitingRecipient
+    case awaitingReason
 }
 
-/// Простое in-memory хранилище на основе actor.
-/// Данные живут только пока работает процесс.
-/// Если нужна долговременная память — перенеси это в БД.
+/// 2. Данные одной сессии (сохраняем состояние и, например, выбранного получателя)
+public struct Session: Codable {
+    public var state: SessionState
+    public var to: String?
+    public init(state: SessionState = .mainMenu, to: String? = nil) {
+        self.state = state
+        self.to = to
+    }
+}
+
+/// 3. Хранилище всех сессий (in-memory словарь [chatId: Session], actor = потокобезопасность)
 public actor SessionStore {
     private var sessions: [Int64: Session] = [:]
     public init() {}
