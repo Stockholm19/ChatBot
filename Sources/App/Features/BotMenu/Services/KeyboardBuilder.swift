@@ -7,20 +7,10 @@
 
 import Vapor
 
-struct TgReplyKeyboard: Content {
-    struct Button: Content { let text: String }
-    let keyboard: [[Button]]
-    let resize_keyboard: Bool
-    let one_time_keyboard: Bool
-}
-
 enum KeyboardBuilder {
     static func mainMenu() -> TgReplyKeyboard {
         TgReplyKeyboard(
-            keyboard: [
-                [.init(text: "Передать спасибо")],
-                // сюда позже добавить: [.init(text: "Справочник"), .init(text: "Кто за что отвечает")]
-            ],
+            keyboard: [[ .init(text: "Передать спасибо") ]],
             resize_keyboard: true,
             one_time_keyboard: false
         )
@@ -28,11 +18,11 @@ enum KeyboardBuilder {
 
     static func thanksMenu(isAdmin: Bool) -> TgReplyKeyboard {
         var rows: [[TgReplyKeyboard.Button]] = [
-            [.init(text: "Спасибо")],
-            [.init(text: "Количество переданных")]
+            [ .init(text: "Спасибо") ],
+            [ .init(text: "Количество переданных") ]
         ]
-        if isAdmin { rows.append([.init(text: "Экспорт CSV")]) }
-        rows.append([.init(text: "← Назад")])
+        if isAdmin { rows.append([ .init(text: "Экспорт CSV") ]) }
+        rows.append([ .init(text: "← Назад") ])
         return TgReplyKeyboard(keyboard: rows, resize_keyboard: true, one_time_keyboard: false)
     }
 }
