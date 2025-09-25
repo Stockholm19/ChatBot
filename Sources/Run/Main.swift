@@ -4,7 +4,7 @@ import Vapor
 @main
 struct RunApp {
     static func main() throws {
-        var env = try Environment.detect()
+        let env = try Environment.detect()
         let app = Application(env)
         defer { app.shutdown() }
 
