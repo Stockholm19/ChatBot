@@ -165,18 +165,18 @@ docker compose -f docker-compose.prod.yml logs --tail 200
 
 ```
 Sources/
-├── App/
-│   ├── Features/
-│   │   ├── Kudos/
-│   │   │   ├── Models/
-│   │   │   ├── Controllers/
-│   │   │   └── Services/
-│   │   ├── Users/
-│   │   │   ├── Models/
-│   │   │   ├── Controllers/
-│   │   │   └── Services/
-│   ├── Configure.swift
-│   └── main.swift
+├── App/                   // Корневая папка серверного приложения
+│   ├── Features/             // Основные фичи (разделение по доменам/модулям)
+│   │   ├── Kudos/               // Фича "Благодарности"
+│   │   │   ├── Models/            // Модели данных (структуры Fluent/DTO)
+│   │   │   ├── Controllers/       // Контроллеры (роуты и обработка запросов)
+│   │   │   └── Services/          // Сервисы (логика работы, бизнес-правила)
+│   │   ├── Users/               // Фича "Пользователи"
+│   │   │   ├── Models/            // Модели данных для пользователей
+│   │   │   ├── Controllers/       // Контроллеры для работы с пользователями
+│   │   │   └── Services/          // Логика (авторизация, хранение и т.п.)
+│   ├── Configure.swift      // Конфигурация приложения (middlewares, базы, маршруты)
+│   └── main.swift           // Точка входа (запуск сервера)
 ```
 
 ## Синхронизация docker-compose
