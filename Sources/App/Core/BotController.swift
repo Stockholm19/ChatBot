@@ -28,6 +28,7 @@ enum BotController {
             app: app,
             api: api,
             chatId: chatId,
+            userId: m.from?.id,
             username: m.from?.username,
             text: text,
             sessions: sessions,

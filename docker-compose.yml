@@ -20,6 +20,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       BOT_TOKEN: ${BOT_TOKEN}
       TZ: ${TZ:-UTC}
+      ADMIN_IDS: ${ADMIN_IDS}
     volumes:
       - ./exports:/exports
     depends_on:

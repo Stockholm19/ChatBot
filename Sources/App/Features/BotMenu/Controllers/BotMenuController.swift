@@ -12,14 +12,25 @@ enum BotMenuController {
 
     // MARK: - Roles
 
-    static func isAdmin(_ username: String?) -> Bool {
-        guard let u = username?.lowercased() else { return false }
-        let raw = Environment.get("ADMIN_USERNAMES") ?? "" // пример: "roman,teamlead,hr"
-        let set = Set(
-            raw.split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
-        )
-        return set.contains(u)
+    /// Проверка прав администратора: поддерживает и ADMIN_IDS (числовые Telegram ID),
+    /// и ADMIN_USERNAMES (ники без @). Достаточно совпадения по одному из списков.
+    static func isAdmin(userId: Int64?, username: String?) -> Bool {
+        var ok = false
+        if let id = userId {
+            let rawIDs = (Environment.get("ADMIN_IDS") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let ids = Set(rawIDs.split(separator: ",").compactMap {
+                Int64($0.trimmingCharacters(in: .whitespacesAndNewlines))
+            })
+            ok = ok || ids.contains(id)
+        }
+        if let u = username?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            let rawUN = (Environment.get("ADMIN_USERNAMES") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let uns = Set(rawUN.split(separator: ",").map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            })
+            ok = ok || uns.contains(u)
+        }
+        return ok
     }
 
     // MARK: - Entry points
@@ -42,12 +53,31 @@ enum BotMenuController {
         app: Application,
         api: String,
         chatId: Int64,
+        userId: Int64?,
         username: String?,
         text: String,
         sessions: SessionStore,
         db: Database
     ) async {
         let state = (await sessions.get(chatId))?.state ?? .mainMenu
+
+        // Debug: /whoami — показывает распознанный userId/username и env (только для админов)
+        // Как проверка норм ли читает .env
+        if text == "/whoami" {
+            guard isAdmin(userId: userId, username: username) else {
+                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Команда недоступна.")
+                return
+            }
+            let msg = """
+            userId: \(userId.map(String.init) ?? "nil")
+            username: \(username ?? "nil")
+            ADMIN_IDS: \(Environment.get("ADMIN_IDS") ?? "(nil)")
+            ADMIN_USERNAMES: \(Environment.get("ADMIN_USERNAMES") ?? "(nil)")
+            isAdmin: \(isAdmin(userId: userId, username: username) ? "true" : "false")
+            """
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: msg)
+            return
+        }
 
         switch (state, text) {
 
@@ -56,7 +86,7 @@ enum BotMenuController {
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
                 text: "Меню благодарностей:",
-                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(username))
+                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(userId: userId, username: username))
             )
             await sessions.set(chatId, Session(state: .thanksMenu, to: nil))
             return
@@ -78,11 +108,11 @@ enum BotMenuController {
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
                 text: "Ты отправил благодарностей: <b>\(total)</b>.",
-                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(username))
+                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(userId: userId, username: username))
             )
             return
 
-        case (.thanksMenu, "Экспорт CSV") where isAdmin(username):
+        case (.thanksMenu, "Экспорт CSV") where isAdmin(userId: userId, username: username):
             // Путь во временную папку
             let tmpPath = FileManager.default.temporaryDirectory
                 .appendingPathComponent("kudos_export.csv").path
@@ -122,7 +152,7 @@ enum BotMenuController {
 
             let kudos = Kudos(
                 ts: Date(),
-                fromUserId: 61087823, // Реальный Telegram userId для Админов
+                fromUserId: userId ?? 0,
                 fromUsername: fromUsername,
                 fromName: username ?? fromUsername,
                 toUsername: toUsername,
@@ -133,7 +163,7 @@ enum BotMenuController {
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
                 text: "Готово! Отправлено \(toUsername).",
-                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(username))
+                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(userId: userId, username: username))
             )
             await sessions.set(chatId, Session(state: .thanksMenu, to: nil))
             return
