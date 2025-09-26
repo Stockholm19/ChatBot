@@ -186,7 +186,12 @@ docker compose -f docker-compose.prod.yml logs --tail 200
 
 ```
 Sources/
-├── App/                       // Корневая папка серверного приложения
+├── App/                       // Корневая папка
+│   ├── Configuration/           // Конфигурация запуска
+│   │   ├── Boot.swift             // Основная настройка приложения (БД, миграции, маршруты)
+│   │   ├── Migrations.swift       // Регистрация миграций Fluent
+│   │   └── Routes.swift           // Регистрация HTTP- и ботовых маршрутов
+│   │   
 │   ├── Core/                  // Базовые сервисы и общая инфраструктура
 │   │   ├── BotController.swift    // Роутинг апдейтов Telegram → делегирует в фичи
 │   │   ├── TelegramService.swift  // Транспорт: poll, sendMessage, sendDocument
