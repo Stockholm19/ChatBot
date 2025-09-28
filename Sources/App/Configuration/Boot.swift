@@ -24,4 +24,8 @@ public func configure(_ app: Application) throws {
 
     // Автоматическое применение миграций при старте (без падения в dev)
     Task { try? await app.autoMigrate() }
+    
+    // Слушать на всех интерфейсах (чтобы было доступно извне контейнера)
+    app.http.server.configuration.hostname = Environment.get("HOST") ?? "0.0.0.0"
+    app.http.server.configuration.port = Environment.get("PORT").flatMap(Int.init) ?? 8080
 }
