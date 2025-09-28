@@ -1,4 +1,3 @@
-
 # Kudos Bot
 
 Kudos Bot — это Telegram-бот на **Swift (Vapor)**, построенный по модульной архитектуре с кастомным стартовым меню.  
@@ -168,8 +167,32 @@ docker compose -f docker-compose.prod.yml logs --tail 200
    docker compose -f docker-compose.prod.yml up -d
    ```
 
+### Проверка доступности и мониторинг
 
+```bash
+# внутри VPS
+curl -i http://127.0.0.1:8080/health
 
+# снаружи (с пк или через Uptime Kuma)
+curl -i http://<IP_VPS>:8080/health
+```
+
+````markdown
+Эндпоинт `/health` всегда возвращает `200 OK` при успешной работе приложения.  
+Он используется:
+- для **healthcheck** контейнера в Docker Compose,
+- для внешнего мониторинга (например, [Uptime Kuma](https://github.com/louislam/uptime-kuma)).
+
+#### Пример настройки Uptime Kuma
+- **Тип**: HTTP(s)  
+- **URL**: `http://<IP_VPS>:8080/health`  
+- **Метод**: GET  
+- **Интервал опроса**: 60 секунд  
+- **Допустимые коды**: 200–299  
+- **Авторизация**: отсутствует  
+
+Такой монитор позволит вовремя заметить падение контейнера и настроить уведомления (Telegram, Email и др.).
+````
 
 ## Структура данных и экспорт
 
@@ -236,4 +259,3 @@ Sources/
 - Расширить функционал команд бота.
 
 ---
-
