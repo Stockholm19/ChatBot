@@ -222,18 +222,18 @@ Sources/
 │   │   ├── CSVExporter.swift      // Утилита экспорта данных в CSV
 │   │   └── DTO.swift              // Общие Data Transfer Objects (модели Telegram API и др.)
 │   │
-│   ├── Features/              // Основные фичи (доменные модули)
-│   │   ├── BotMenu/               // Фича “Меню бота” (навигация и кнопки)
-│   │   │   ├── Controllers/          // BotMenuController.swift — логика экранов и кнопок
-│   │   │   └── Services/             // KeyboardBuilder.swift — генерация клавиатур
-│   │   │
-│   │   └── Kudos/                 // Фича “Благодарности”
-│   │       ├── Models/               // KudosModel.swift — модель данных Fluent
-│   │       ├── Controllers/          // KudosController.swift — HTTP/бот-ручки для работы с благами.
-│   │       └── Services/             // Логика домена (экспорт CSV, подсчёты)
-│   │
-│   └── Run/                    // Точка входа приложения
-│       └── Main.swift             // Запуск сервера Vapor
+│   └──  Features/              // Основные фичи (доменные модули)
+│       ├── BotMenu/               // Фича “Меню бота” (навигация и кнопки)
+│       │   ├── Controllers/          // BotMenuController.swift — логика экранов и кнопок
+│       │   └── Services/             // KeyboardBuilder.swift — генерация клавиатур
+│       │
+│       └── Kudos/                 // Фича “Благодарности”
+│           ├── Models/               // KudosModel.swift — модель данных Fluent
+│           ├── Controllers/          // KudosController.swift — HTTP/бот-ручки для работы с благами.
+│           └── Services/             // Логика домена (экспорт CSV, подсчёты)
+│   
+├── Run/                       // Точка входа приложения
+│   └── Main.swift             // Запуск сервера Vapor
 ```
 
 ## Синхронизация docker-compose
