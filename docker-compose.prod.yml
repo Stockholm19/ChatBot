@@ -1,0 +1,23 @@
+services:
+  kudos-bot:
+    image: helsinki253/kudos-bot:latest
+    container_name: kudos-bot
+    env_file:
+      - .env
+    volumes:
+      - kudos_db:/data
+      - ./exports:/exports
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Europe/Moscow}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    ports:
+      - "8080:8080"   # 👈 публикуем /health наружу для Kuma
+volumes:
+  kudos_db:
+  
+  
