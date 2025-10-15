@@ -96,6 +96,11 @@ jobs:
 
             echo "🧹 Prune…"
             docker image prune -f
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
+          DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
 
       - name: Calculate deploy duration
         id: duration
