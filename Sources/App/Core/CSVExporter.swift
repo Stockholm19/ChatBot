@@ -16,7 +16,7 @@ enum CSVExporter {
     static func exportKudos(db: Database, to path: String) async throws {
         
         // Загружаем все записи Kudos из БД, сортируем по времени
-        let rows = try await Kudos.query(on: db).sort(\.$ts, .ascending).all()
+        let rows = try await Kudos.query(on: db).sort(\.$ts, .descending).all()
         let delimiter = ";"
 
         // Заголовки CSV
