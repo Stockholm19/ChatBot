@@ -1,23 +1,43 @@
 services:
-  kudos-bot:
-    image: helsinki253/kudos-bot:latest
-    container_name: kudos-bot
-    env_file:
-      - .env
-    volumes:
-      - kudos_db:/data
-      - ./exports:/exports
-    restart: unless-stopped
+  db:
+    image: postgres:16-alpine
+    container_name: kudos-db
     environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kudos}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - kudos_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-kudos}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  kudos-bot:
+    image: ${DOCKER_IMAGE:-helsinki253/kudos-bot}:latest
+    container_name: kudos-bot
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8080
+      POSTGRES_HOST: db
+      AUTO_MIGRATE: "true"
       TZ: ${TZ:-Europe/Moscow}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./exports:/exports
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
       interval: 30s
       timeout: 3s
-      retries: 3
-    ports:
-      - "8080:8080"   # 👈 публикуем /health наружу для Kuma
+      retries: 5
+    restart: unless-stopped
+
 volumes:
-  kudos_db:
-  
-  
+  kudos_pgdata:
