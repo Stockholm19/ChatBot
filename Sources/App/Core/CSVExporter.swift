@@ -20,8 +20,13 @@ enum CSVExporter {
         let delimiter = ";"
 
         // Заголовки CSV
-        var csv = "Timestamp\(delimiter)From Username\(delimiter)From Name\(delimiter)To Username\(delimiter)Reason\n"
-        let df = ISO8601DateFormatter()
+        var csv = "Дата и время\(delimiter)От кого (логин)\(delimiter)От кого (имя)\(delimiter)Кому (логин)\(delimiter)Причина\n"
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "ru_RU")
+        df.dateFormat = "dd.MM.yyyy HH:mm"
+        
+        // Часовой пояс фиксируем как +3 часа от UTC (Москва)
+        df.timeZone = TimeZone(secondsFromGMT: 3 * 3600)
 
         // Функция экранирования: заменяем кавычки и оборачиваем в кавычки при необходимости
         func esc(_ s: String) -> String {
