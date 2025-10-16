@@ -258,4 +258,16 @@ Sources/
 - Расширить функционал команд бота.
 - Добавить тесты.
 
+
+## Очистка данных в базе
+ 
+Команда ниже полностью очищает таблицу `public.kudos` и сбрасывает счетчик ID.
+
+> ⚠️ **Внимание:** действие необратимо. Все записи будут удалены без возможности восстановления.
+
+```bash
+docker compose exec -it db \
+  psql -U postgres -d kudos -c \
+  "TRUNCATE TABLE public.kudos RESTART IDENTITY CASCADE;"
+  
 ---
