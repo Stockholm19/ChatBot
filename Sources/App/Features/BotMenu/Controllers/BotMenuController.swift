@@ -100,7 +100,8 @@ enum BotMenuController {
         case (.thanksMenu, "Спасибо"):
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "Кому сказать спасибо? Пришли @username получателя."
+                text: "Кому сказать спасибо? Пришли @username получателя.",
+                replyMarkup: KeyboardBuilder.chooseRecipientMenu()
             )
             await sessions.set(chatId, Session(state: .awaitingRecipient))
             return
@@ -136,6 +137,33 @@ enum BotMenuController {
             )
             await sessions.set(chatId, Session(state: .mainMenu))
             return
+            
+        case (.awaitingRecipient, "← Назад"):
+            await sessions.set(chatId, Session(state: .thanksMenu))
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Меню благодарностей:",
+                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(userId: userId, username: username))
+            )
+            return
+
+        case (.awaitingReason, "← Назад"):
+            await sessions.set(chatId, Session(state: .awaitingRecipient))
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Кому сказать спасибо? Пришли @username получателя.",
+                replyMarkup: KeyboardBuilder.chooseRecipientMenu()
+            )
+            return
+
+        case (.awaitingReason, "Отмена"):
+            await sessions.set(chatId, Session(state: .mainMenu))
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Действие отменено.",
+                replyMarkup: KeyboardBuilder.mainMenu()
+            )
+            return
 
         // MARK: Шаги сценария: получатель → причина
 
@@ -144,7 +172,8 @@ enum BotMenuController {
             await sessions.set(chatId, Session(state: .awaitingReason, to: trimmed))
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "За что благодаришь? Одно сообщение (≥ \(minReasonLength) символов)."
+                text: "За что благодаришь? Одно сообщение (≥ \(minReasonLength) символов).",
+                replyMarkup: KeyboardBuilder.reasonMenu()
             )
             return
 
@@ -161,7 +190,8 @@ enum BotMenuController {
         case (.awaitingReason, _) where trimmed.count < minReasonLength:
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "Сообщение должно содержать не менее \(minReasonLength) символов."
+                text: "Сообщение должно содержать не менее \(minReasonLength) символов.",
+                replyMarkup: KeyboardBuilder.reasonMenu()
             )
             await sessions.set(chatId, Session(state: .awaitingReason, to: currentTo))
             return

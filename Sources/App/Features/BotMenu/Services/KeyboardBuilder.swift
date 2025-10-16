@@ -23,6 +23,32 @@ enum KeyboardBuilder {
         ]
         if isAdmin { rows.append([ .init(text: "Экспорт CSV") ]) }
         rows.append([ .init(text: "← Назад") ])
-        return TgReplyKeyboard(keyboard: rows, resize_keyboard: true, one_time_keyboard: false)
+        return TgReplyKeyboard(
+            keyboard: rows,
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+
+    /// Клавиатура выбора получателя: только «Назад»
+    static func chooseRecipientMenu() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "← Назад") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+
+    /// Клавиатура на шаге ввода причины: «Назад» и «Отмена»
+    static func reasonMenu() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "← Назад"), .init(text: "Отмена") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
     }
 }
