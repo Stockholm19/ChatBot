@@ -10,6 +10,9 @@ import Fluent
 
 enum BotMenuController {
 
+    // Минимальная длина текста благодарности
+    private static let minReasonLength = 20
+
     // MARK: - Roles
 
     /// Проверка прав администратора: поддерживает и ADMIN_IDS (числовые Telegram ID),
@@ -59,11 +62,13 @@ enum BotMenuController {
         sessions: SessionStore,
         db: Database
     ) async {
-        let state = (await sessions.get(chatId))?.state ?? .mainMenu
+        let session = await sessions.get(chatId) ?? Session(state: .mainMenu)
+        let state = session.state
+        let currentTo = session.to
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Debug: /whoami — показывает распознанный userId/username и env (только для админов)
-        // Как проверка норм ли читает .env
-        if text == "/whoami" {
+        if trimmed == "/whoami" {
             guard isAdmin(userId: userId, username: username) else {
                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Команда недоступна.")
                 return
@@ -79,7 +84,7 @@ enum BotMenuController {
             return
         }
 
-        switch (state, text) {
+        switch (state, trimmed) {
 
         // MARK: Главное меню → подменю «Спасибо»
         case (.mainMenu, "Передать спасибо"):
@@ -113,10 +118,8 @@ enum BotMenuController {
             return
 
         case (.thanksMenu, "Экспорт CSV") where isAdmin(userId: userId, username: username):
-            // Путь во временную папку
             let tmpPath = FileManager.default.temporaryDirectory
                 .appendingPathComponent("kudos_export.csv").path
-            // Экспорт и отправка файла
             try? await CSVExporter.exportKudos(db: db, to: tmpPath)
             try? await TelegramService.sendDocument(
                 app, api: api, chatId: chatId,
@@ -137,18 +140,36 @@ enum BotMenuController {
         // MARK: Шаги сценария: получатель → причина
 
         // Принят @username получателя
-        case (.awaitingRecipient, _) where text.hasPrefix("@"):
-            await sessions.set(chatId, Session(state: .awaitingReason, to: text))
+        case (.awaitingRecipient, _) where trimmed.hasPrefix("@"):
+            await sessions.set(chatId, Session(state: .awaitingReason, to: trimmed))
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "За что благодаришь? Одно сообщение (≥ 20 символов)."
+                text: "За что благодаришь? Одно сообщение (≥ \(minReasonLength) символов)."
             )
             return
 
-        // Принята причина (валидная длина) → сохраняем
-        case (.awaitingReason, _) where text.count >= 20:
+        // Неверный ввод получателя → мягкая подсказка
+        case (.awaitingRecipient, _):
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Нужно прислать @username получателя (пример: @nickname)."
+            )
+            await sessions.set(chatId, Session(state: .awaitingRecipient))
+            return
+
+        // Короткий текст причины → просим дописать
+        case (.awaitingReason, _) where trimmed.count < minReasonLength:
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Сообщение должно содержать не менее \(minReasonLength) символов."
+            )
+            await sessions.set(chatId, Session(state: .awaitingReason, to: currentTo))
+            return
+
+        // Принята причина → сохраняем
+        case (.awaitingReason, _) where trimmed.count >= minReasonLength:
             let fromUsername = "@\(username ?? "unknown")"
-            let toUsername = (await sessions.get(chatId))?.to ?? "@unknown"
+            let toUsername = currentTo ?? "@unknown"
 
             let kudos = Kudos(
                 ts: Date(),
@@ -156,7 +177,7 @@ enum BotMenuController {
                 fromUsername: fromUsername,
                 fromName: username ?? fromUsername,
                 toUsername: toUsername,
-                reason: text
+                reason: trimmed
             )
             try? await kudos.save(on: db)
 
@@ -170,7 +191,6 @@ enum BotMenuController {
 
         // MARK: Фолбэк
         default:
-            // Мягкая подсказка на случай непредусмотренного ввода
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
                 text: "Не понял команду. Нажми кнопку ниже.",
