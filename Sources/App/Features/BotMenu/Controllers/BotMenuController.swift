@@ -204,7 +204,6 @@ enum BotMenuController {
 
         case (.thanksMenu, "Количество переданных"):
             app.logger.info("BotMenu: tapped 'Количество переданных'")
-            // Сначала пробуем посчитать по новой связке (from_employee_id) через telegram_id
             var total = 0
             if let tg = userId,
                let me = try? await Employee.query(on: db)
@@ -214,12 +213,18 @@ enum BotMenuController {
                 total = (try? await Kudos.query(on: db)
                     .filter(\.$fromEmployee.$id == meID)
                     .count()) ?? 0
-            } else {
-                // Fallback — по старому полю username
-                let meUN = "@\(username ?? "")"
-                total = (try? await Kudos.query(on: db)
-                    .filter(\.$fromUsername == meUN)
-                    .count()) ?? 0
+            }
+            if total == 0 { // Fallback by normalized username
+                let raw = (username ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if !raw.isEmpty {
+                    let withAt = raw.hasPrefix("@") ? raw : "@\(raw)"
+                    total = (try? await Kudos.query(on: db)
+                        .group(.or) { or in
+                            or.filter(\.$fromUsername == withAt)
+                            or.filter(\.$fromUsername == raw)
+                        }
+                        .count()) ?? 0
+                }
             }
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
@@ -230,7 +235,6 @@ enum BotMenuController {
 
         case (.thanksMenu, "Сколько получил"):
             app.logger.info("BotMenu: tapped 'Сколько получил'")
-            // Считаем по новой связке (employee_id) через telegram_id, с fallback на to_username
             var total = 0
             if let tg = userId,
                let me = try? await Employee.query(on: db)
@@ -240,12 +244,18 @@ enum BotMenuController {
                 total = (try? await Kudos.query(on: db)
                     .filter(\.$employee.$id == meID)
                     .count()) ?? 0
-            } else {
-                // Fallback — по старому полю to_username
-                let meUN = "@\(username ?? "")"
-                total = (try? await Kudos.query(on: db)
-                    .filter(\.$toUsername == meUN)
-                    .count()) ?? 0
+            }
+            if total == 0 { // Fallback by normalized username (toUsername)
+                let raw = (username ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if !raw.isEmpty {
+                    let withAt = raw.hasPrefix("@") ? raw : "@\(raw)"
+                    total = (try? await Kudos.query(on: db)
+                        .group(.or) { or in
+                            or.filter(\.$toUsername == withAt)
+                            or.filter(\.$toUsername == raw)
+                        }
+                        .count()) ?? 0
+                }
             }
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
@@ -330,8 +340,12 @@ enum BotMenuController {
 
         // Принята причина → сохраняем
         case (.awaitingReason, _) where trimmed.count >= minReasonLength:
-            let fromUsername = "@\(username ?? "unknown")"
-            let toUsername = currentTo ?? "@unknown"
+            // Нормализуем отправителя
+            let fromUN = normalizeUsername(username ?? "unknown")
+
+            // Получатель: либо выбран из каталога (FK), либо введён вручную через @username
+            let recipientId = (await sessions.get(chatId))?.chosenEmployeeId
+            let toUN = currentTo != nil ? normalizeUsername(currentTo!) : "@unknown"
 
             // Попробуем найти сотрудника-отправителя по его Telegram ID и привязать как FK
             var senderEmployeeID: UUID? = nil
@@ -342,24 +356,31 @@ enum BotMenuController {
                     .requireID()
             }
 
+            // Создаём Kudos с привязкой получателя по FK (если выбран из каталога)
             let kudos = Kudos(
                 ts: Date(),
                 fromUserId: userId ?? 0,
-                fromUsername: fromUsername,
-                fromName: username ?? fromUsername,
-                toUsername: toUsername,
+                fromUsername: fromUN,
+                fromName: username ?? fromUN,
+                toUsername: toUN,              // фолбэк для экспорта/старых сценариев
                 reason: trimmed,
-                employeeId: nil,                 // получатель пока по @username (позже будет через выбор из списка)
-                fromEmployeeId: senderEmployeeID // <-- привязка отправителя к Employee
+                employeeId: recipientId,       // <-- ключевой фикс: FK получателя
+                fromEmployeeId: senderEmployeeID
             )
             try? await kudos.save(on: db)
 
+            // Текст ответа — ФИО, если выбирали из каталога, иначе ник
+            var targetText = toUN
+            if let rid = recipientId, let emp = try? await Employee.find(rid, on: db) {
+                targetText = emp.fullName
+            }
+
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "Готово! Отправлено \(toUsername).",
+                text: "Готово! Отправлено \(targetText).",
                 replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(userId: userId, username: username))
             )
-            await sessions.set(chatId, Session(state: .thanksMenu, to: nil))
+            await sessions.set(chatId, Session(state: .thanksMenu, to: nil, page: (await sessions.get(chatId))?.page, chosenEmployeeId: nil))
             return
 
         // MARK: Фолбэк
