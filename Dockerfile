@@ -2,13 +2,15 @@
 FROM swift:5.10-jammy AS build
 WORKDIR /app
 
-# Кешируем зависимости (быстрые повторы сборки)
+# кеш зависимостей
 COPY Package.swift ./
 COPY Package.resolved ./
 RUN swift package resolve
 
-# Копируем исходники и собираем релиз
+# копируем исходники И ресурсы в build-стейдж
 COPY Sources Sources
+COPY Resources Resources
+
 RUN swift build -c release --static-swift-stdlib
 
 # ---------- Stage 2: runtime ----------
@@ -20,8 +22,9 @@ RUN apt-get update && apt-get install -y \
     ca-certificates tzdata curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Кладём бинарник
+# бинарь и ресурсы из build-стейджа
 COPY --from=build /app/.build/release/Run /run/Run
+COPY --from=build /app/Resources /run/Resources
 
 # (опционально) health-check порт
 EXPOSE 8080
