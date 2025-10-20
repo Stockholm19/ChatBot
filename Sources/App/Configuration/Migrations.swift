@@ -12,6 +12,5 @@ public func migrations(_ app: Application) {
     // Регистрация миграций моделей
     app.migrations.add(CreateKudos())
     
-    // Когда появится модель пользователя:
-    // app.migrations.add(CreateUser())
+    app.migrations.add(CreateEmployees())
 }
