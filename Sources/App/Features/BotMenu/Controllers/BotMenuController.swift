@@ -13,6 +13,54 @@ enum BotMenuController {
     // Минимальная длина текста благодарности
     private static let minReasonLength = 20
 
+    // MARK: - Helpers
+    
+    /// Нормализует ник: trim + lowercased + ensure leading '@'
+    private static func normalizeUsername(_ raw: String) -> String {
+        let t = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if t.isEmpty { return "@unknown" }
+        return t.hasPrefix("@") ? t : "@\(t)"
+    }
+    
+    /// Возвращает срез массива для страницы `page` (0-based) по `per` элементов
+    private static func pageSlice<T>(_ items: [T], page: Int, per: Int = 10) -> ArraySlice<T> {
+        let start = max(0, page * per)
+        let end = min(items.count, start + per)
+        return items[start..<end]
+    }
+    
+    /// Показывает страницу каталога сотрудников
+    private static func showEmployeesPage(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        sessions: SessionStore,
+        db: Database,
+        page: Int
+    ) async {
+        let all = (try? await Employee.query(on: db)
+            .filter(\.$isActive == true)
+            .sort(\.$fullName, .ascending)
+            .all()) ?? []
+        
+        let per = 10
+        let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
+        let p = max(0, min(page, totalPages - 1))
+        let slice = pageSlice(all, page: p, per: per)
+        let names = Array(slice.map { $0.fullName })
+        
+        await TelegramService.sendMessage(
+            app, api: api, chatId: chatId,
+            text: "Кому сказать спасибо?",
+            replyMarkup: KeyboardBuilder.employeesPage(
+                names: names,
+                hasPrev: p > 0,
+                hasNext: p < totalPages - 1
+            )
+        )
+        await sessions.set(chatId, Session(state: .choosingEmployee, page: p))
+    }
+
     // MARK: - Roles
 
     /// Проверка прав администратора: поддерживает и ADMIN_IDS (числовые Telegram ID),
@@ -98,12 +146,7 @@ enum BotMenuController {
 
         // MARK: Подменю «Спасибо» — запустить сценарий
         case (.thanksMenu, "Спасибо"):
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Кому сказать спасибо? Пришли @username получателя.",
-                replyMarkup: KeyboardBuilder.chooseRecipientMenu()
-            )
-            await sessions.set(chatId, Session(state: .awaitingRecipient))
+            await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0)
             return
 
         case (.thanksMenu, "Количество переданных"):
