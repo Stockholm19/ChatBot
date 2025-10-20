@@ -12,6 +12,7 @@ import Foundation
 public enum SessionState: String, Codable {
     case mainMenu
     case thanksMenu
+    case choosingEmployee
     case awaitingRecipient
     case awaitingReason
 }
@@ -20,9 +21,13 @@ public enum SessionState: String, Codable {
 public struct Session: Codable {
     public var state: SessionState
     public var to: String?
-    public init(state: SessionState = .mainMenu, to: String? = nil) {
+    public var page: Int?
+    public var chosenEmployeeId: UUID?
+    public init(state: SessionState = .mainMenu, to: String? = nil, page: Int? = nil, chosenEmployeeId: UUID? = nil) {
         self.state = state
         self.to = to
+        self.page = page
+        self.chosenEmployeeId = chosenEmployeeId
     }
 }
 
