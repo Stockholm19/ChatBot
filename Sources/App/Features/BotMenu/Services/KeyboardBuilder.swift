@@ -31,6 +31,27 @@ enum KeyboardBuilder {
         )
     }
 
+    /// Постраничный список сотрудников (по одному имени в строке) + навигация
+    static func employeesPage(names: [String], hasPrev: Bool, hasNext: Bool) -> TgReplyKeyboard {
+        var rows: [[TgReplyKeyboard.Button]] = names.map { [ .init(text: $0) ] }
+
+        // Навигация ◀︎ / ▶︎
+        var nav: [TgReplyKeyboard.Button] = []
+        if hasPrev { nav.append(.init(text: "◀︎")) }
+        if hasNext { nav.append(.init(text: "▶︎")) }
+        if !nav.isEmpty { rows.append(nav) }
+
+        // Фолбэк ручного ввода и назад
+        rows.append([ .init(text: "Ввести @username вручную") ])
+        rows.append([ .init(text: "← Назад") ])
+
+        return TgReplyKeyboard(
+            keyboard: rows,
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+
     /// Клавиатура выбора получателя: только «Назад»
     static func chooseRecipientMenu() -> TgReplyKeyboard {
         TgReplyKeyboard(
