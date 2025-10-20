@@ -133,6 +133,59 @@ enum BotMenuController {
         }
 
         switch (state, trimmed) {
+        // MARK: - Каталог сотрудников: навигация и выбор
+        case (.choosingEmployee, "◀︎"):
+            let page = (await sessions.get(chatId))?.page ?? 0
+            await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1))
+            return
+
+        case (.choosingEmployee, "▶︎"):
+            let page = (await sessions.get(chatId))?.page ?? 0
+            await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
+            return
+
+        case (.choosingEmployee, "Ввести @username вручную"):
+            await sessions.set(chatId, Session(state: .awaitingRecipient))
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Пришли @username получателя.",
+                replyMarkup: KeyboardBuilder.chooseRecipientMenu()
+            )
+            return
+
+        case (.choosingEmployee, "← Назад"):
+            await sessions.set(chatId, Session(state: .thanksMenu))
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Меню благодарностей:",
+                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(userId: userId, username: username))
+            )
+            return
+
+        // Любой другой текст на этом шаге считаем выбором сотрудника по ФИО
+        case (.choosingEmployee, _):
+            let name = trimmed
+            if let emp = try? await Employee.query(on: db)
+                .filter(\.$isActive == true)
+                .filter(\.$fullName == name)
+                .first(),
+               let empId = try? emp.requireID() {
+                
+                await sessions.set(chatId, Session(state: .awaitingReason, to: nil, page: nil, chosenEmployeeId: empId))
+                
+                await TelegramService.sendMessage(
+                    app, api: api, chatId: chatId,
+                    text: "За что благодаришь \(emp.fullName)? Одно сообщение (≥ \(minReasonLength) символов).",
+                    replyMarkup: KeyboardBuilder.reasonMenu()
+                )
+                return
+            } else {
+                await TelegramService.sendMessage(
+                    app, api: api, chatId: chatId,
+                    text: "Не нашёл такого сотрудника. Листай ◀︎/▶︎ или выбери из списка."
+                )
+                return
+            }
 
         // MARK: Главное меню → подменю «Спасибо»
         case (.mainMenu, "Передать спасибо"):
@@ -231,12 +284,8 @@ enum BotMenuController {
             return
 
         case (.awaitingReason, "← Назад"):
-            await sessions.set(chatId, Session(state: .awaitingRecipient))
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Кому сказать спасибо? Пришли @username получателя.",
-                replyMarkup: KeyboardBuilder.chooseRecipientMenu()
-            )
+            let page = (await sessions.get(chatId))?.page ?? 0
+            await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page)
             return
 
         case (.awaitingReason, "Отмена"):
