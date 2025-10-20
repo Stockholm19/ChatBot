@@ -1,273 +1,223 @@
 # Kudos Bot
 
-Kudos Bot — это Telegram-бот на **Swift (Vapor)**, построенный по модульной архитектуре с кастомным стартовым меню.  
-Каждая кнопка в меню — это отдельная фича (например, «Благодарности»), и проект легко расширяется новыми модулями.  
+## Описание проекта
 
-Первая реализованная фича — **Kudos (Благодарности)**: можно отправлять благодарности коллегам, считать статистику и выгружать всё в CSV.  
-В дальнейшем планируется добавление новых функций (списки сотрудников, справочные разделы и др.).
+Kudos Bot — это Telegram-бот, написанный на **Swift (Vapor)** и построенный по модульной архитектуре с кастомным стартовым меню. Каждая кнопка в меню представляет собой отдельную функциональную фичу (например, «Благодарности»), что позволяет легко расширять проект новыми модулями.
 
-Проект разворачивается через Docker и включает CI/CD пайплайн.
-
-## Оглавление
-- [Kudos Bot](#kudos-bot)
-  - [Возможности](#возможности)
-  - [Стек технологий](#стек-технологий)
-  - [Данные и выгрузки](#данные-и-выгрузки)
-  - [Быстрый старт (локально)](#быстрый-старт-локально)
-  - [Продакшен через Docker Hub + GitHub Actions (CI/CD)](#продакшен-через-docker-hub--github-actions-cicd)
-    - [Что подготовить один раз](#что-подготовить-один-раз)
-    - [Переменные окружения (env)](#переменные-окружения-env)
-    - [Что делает workflow](#что-делает-workflow)
-    - [Ручная проверка на VPS](#ручная-проверка-на-vps)
-    - [Роллбек версии](#роллбек-версии)
-  - [Структура данных и экспорт](#структура-данных-и-экспорт)
-  - [Архитектура проекта](#архитектура-проекта)
-  - [Планы развития](#планы-развития)
-
-
-
-## Скриншоты
-
-<div align="center">
-  <img src="Screenshots/Screenshots1.jpg" alt="Скриншот 1" height="420">
-  &nbsp;&nbsp;
-  <img src="Screenshots/Screenshots2.jpg" alt="Скриншот 2" height="420">
-</div>
-
-## Возможности
-- `/start` — приветственное меню с кнопками (без ввода команд вручную).
-- «Передать спасибо» — пошаговый сценарий:
-  - выбрать коллегу (@username),
-  - указать причину (≥ 20 символов),
-  - сохранить благодарность в базе.
-- «Количество переданных» — статистика по отправленным благодарностям.
-- «Экспорт CSV» — выгрузка всех благодарностей (только для админов).
-- Хранение данных в PostgreSQL.
-- Деплой через Docker + Docker Compose.
-- Полностью работает в Telegram-чате, без веб-интерфейса.
-
-
-## Стек технологий
-- [Swift 5.10](https://swift.org)
-- [Vapor 4](https://vapor.codes)
-- Fluent ORM (с драйвером PostgreSQL)
-- Docker & Docker Compose
-- GitHub Actions (CI/CD)
-
-## Данные и выгрузки
-- Данные хранятся в PostgreSQL (сервис `db` = database в Docker Compose).
-- Экспортированные CSV-файлы сохраняются в папке exports/ на хосте.
+Основная реализованная функция — система благодарностей (Kudos): пользователи могут отправлять благодарности коллегам, просматривать статистику и экспортировать данные в CSV. Проект разворачивается через Docker и включает CI/CD пайплайн для автоматического деплоя.
 
 ---
 
-## Быстрый старт (локально)
+## Основные возможности
 
-**Требования**: Xcode 15+/Swift 5.10, Docker Desktop (для контейнеров).
-  
-### Запуск в Docker
+- Приветственное меню с кнопками, без необходимости ввода команд вручную.
+- Передача благодарностей коллегам через пошаговый сценарий:
+  - выбор сотрудника из постраничного каталога (по 10 человек на экран),
+  - ввод причины благодарности (не менее 20 символов),
+  - сохранение благодарности в базе данных.
+- Статистика:
+  - количество отправленных благодарностей,
+  - количество полученных благодарностей.
+- Экспорт всех благодарностей в CSV (доступен только администраторам).
+- Хранение данных в PostgreSQL.
+- Полная работа в Telegram-чате без веб-интерфейса.
+- Поддержка нескольких администраторов с возможностью настройки через переменную окружения.
+
+---
+
+## Архитектура и фичи
+
+Проект построен по принципу feature-folder архитектуры, где каждая функциональная область изолирована в отдельный модуль.  
+Ниже приведена структура директорий:
+
+```
+Sources/
+├── App/
+│   ├── Configuration/              # Настройка приложения и маршрутов
+│   │   ├── Boot.swift              # Инициализация, миграции, сидирование
+│   │   ├── Migrations/             # Миграции БД
+│   │   └── Routes.swift            # Регистрация роутов
+│   │
+│   ├── Core/                       # Базовые сервисы и инфраструктура
+│   │   ├── BotController.swift     # Роутинг апдейтов Telegram
+│   │   ├── TelegramService.swift   # Транспорт: poll, sendMessage, sendDocument
+│   │   ├── SessionStore.swift      # Хранилище состояний диалогов
+│   │   ├── CSVExporter.swift       # Экспорт благодарностей в CSV
+│   │   └── DTO.swift               # Общие DTO и вспомогательные модели
+│   │
+│   ├── Features/                   # Фичи (доменные модули)
+│   │   ├── BotMenu/                # Меню Telegram-бота
+│   │   │   ├── Controllers/
+│   │   │   │   └── BotMenuController.swift
+│   │   │   └── Services/
+│   │   │       └── KeyboardBuilder.swift
+│   │   │
+│   │   ├── Employees/              # Модуль сотрудников
+│   │   │   ├── Import/
+│   │   │   ├── Migrations/
+│   │   │   │   └── CreateEmployees.swift
+│   │   │   ├── Models/
+│   │   │   │   └── Employee.swift
+│   │   │   └── Services/
+│   │   │       └── EmployeesRepo.swift
+│   │   │
+│   │   └── Kudos/                  # Модуль благодарностей
+│   │       └── KudosModel.swift
+│   │
+│   └── Run/                        # Точка входа
+│       └── Main.swift
+│
+├── Resources/                      # Файлы сидирования и статические данные
+│   └── SeedData/
+│       ├── employees.csv
+│       └── employees.template.csv
+│
+├── exports/                        # Экспортированные CSV-файлы
+│
+├── docker-compose.yml
+├── docker-compose.prod.yml
+└── Dockerfile
+```
+
+### Каталог сотрудников
+
+- Список сотрудников загружается из CSV-файла `Resources/SeedData/employees.csv` и автоматически сохраняется в базу при первом запуске.
+- Каждая запись содержит:
+  - ФИО сотрудника,
+  - статус активности (Да/Нет),
+  - Telegram ID для связи с ботом.
+- При передаче благодарности пользователь выбирает коллегу из постраничного каталога, что исключает необходимость ручного ввода `@username`.
+
+### Связи и подсчёт статистики
+
+- Благодарности хранятся с привязкой к сотрудникам через внешние ключи (`employee_id`, `from_employee_id`), а не просто к никам.
+- Это обеспечивает корректный подсчёт статистики и экспорт данных даже при изменении никнеймов.
+- При отсутствии Telegram ID используется резервный поиск по нику.
+- Кнопки статистики «Сколько получил» и «Количество переданных» учитывают FK-связи.
+
+### Экспорт CSV
+
+- Экспортированные данные содержат ФИО отправителя и получателя, а не только их логины.
+- Пример структуры CSV:
+
+  ```
+  Дата и время;От кого (логин);От кого (имя);Кому (имя);Причина
+  ```
+
+- Старые записи с `@username` продолжают корректно отображаться.
+- Ручной ввод ника временно скрыт из интерфейса, но сохраняется в коде для совместимости.
+
+---
+
+## Данные и структура базы
+
+- PostgreSQL база данных запускается как сервис `db` в Docker Compose и использует volume для хранения данных.
+- Таблица сотрудников содержит данные из CSV-семпла.
+- Таблица благодарностей хранит информацию с FK-связями на сотрудников.
+- Экспортированные CSV-файлы сохраняются в папке `exports/` на хост-машине (примонтировано как `./exports:/exports`).
+
+---
+
+## Развёртывание
+
+### Локальный запуск
+
+**Требования:** Xcode 15+/Swift 5.10, Docker Desktop.
+
+Запуск через Docker Compose:
+
 ```bash
 docker compose up --build -d
 docker compose logs -f
 ```
 
-## Продакшен через Docker Hub + GitHub Actions (CI/CD)
+### Продакшен
 
-Пайплайн:
-1. `git push` в ветку `main`;
-2. GitHub Actions собирает Docker‑образ и пушит в Docker Hub: `helsinki253/kudos-bot:latest`;
-3. Тот же workflow по SSH заходит на VPS и выполняет `docker compose pull && up -d`.
+- Развёртывание на VPS (Ubuntu 22/24) с Docker и Docker Compose.
+- Папка приложения `/apps/kudos-bot`.
+- Файл окружения `.env` с настройками бота, базы данных и администраторами.
+- Пример `.env`:
 
-### Что подготовить один раз
+  ```env
+  BOT_TOKEN=ваш_токен_бота
 
-**На VPS (Ubuntu 22/24):**
-```bash
-# Docker + Compose plugin
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-$(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  POSTGRES_DB=kudos
+  POSTGRES_USER=postgres
+  POSTGRES_PASSWORD=postgres
+  POSTGRES_HOST=db
+  POSTGRES_PORT=5432
+  DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
 
-# Папка приложения + переменные окружения
-sudo mkdir -p /apps/kudos-bot && cd /apps/kudos-bot
-sudo nano .env     # добавить BOT_TOKEN=... и другие переменные (см. ниже)
-sudo chmod 600 .env
-```
+  ADMIN_IDS=12345678,12345678
 
-**Secrets в GitHub (Settings → Secrets and variables → Actions):**
-- `DOCKERHUB_USERNAME` — `helsinki253`
-- `DOCKERHUB_TOKEN` — персональный токен Docker Hub (Read & Write)
-- `VPS_HOST` — IP или хостнейм VPS
-- `VPS_USER` — пользователь SSH (например, `root`)
-- `VPS_SSH_KEY` — содержимое приватного SSH‑ключа (OpenSSH, BEGIN/END)
+  LOG_LEVEL=info
+  STORAGE_DIR=/exports
+  ```
 
-### Переменные окружения (.env)
+- Для запуска на VPS:
 
-Создайте файл `.env` со всеми необходимыми переменными:
-```env
-# Токен Telegram-бота
-BOT_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  ```bash
+  sudo mkdir -p /apps/kudos-bot && cd /apps/kudos-bot
+  sudo nano .env  # добавить переменные окружения
+  sudo chmod 600 .env
+  ```
 
-# База данных (локально через Docker Compose)
-POSTGRES_DB=kudos
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_HOST=db
-POSTGRES_PORT=5432
-DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
+- Запуск через Docker Compose с продовым файлом:
 
-ADMIN_IDS=12345678,12345678
-
-# Дополнительно
-LOG_LEVEL=info
-STORAGE_DIR=/exports
-```
-
-В переменной `ADMIN_IDS` нужно вручную указать список Telegram userId администраторов (через запятую), иначе кнопка «Экспорт CSV» не будет доступна.
-
-Пример:
-```
-ADMIN_IDS=61087823,123456789
-```
-
-### Что делает workflow
-
-Файл: `.github/workflows/deploy.yml`  
-- Сборка Docker образа (с кэшем слоёв через GitHub Actions Cache);
-- Пуш в Docker Hub (`latest` и тег коммита);
-- SSH на VPS + запуск/обновление Compose в `/apps/kudos-bot/docker-compose.prod.yml`.
-
-### Ручная проверка на VPS
-
-```bash
-cd /apps/kudos-bot
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs --tail 200
-```
-
-### Роллбек версии
-Если после деплоя что-то сломалось, можно откатиться на предыдущий рабочий образ:
-
-1. Найдите в [GitHub Actions](../../actions) номер коммита (SHA), для которого собирался Docker-образ.
-2. На VPS подтяните нужный образ:
-   ```bash
-   docker pull helsinki253/kudos-bot:<SHA>
-   ```
-   
-3. В docker-compose.prod.yml укажите этот тег:
-   ```
-   image: helsinki253/kudos-bot:<SHA>
-   ```
-   
-4. Примените изменения:
-   ```
-   docker compose -f docker-compose.prod.yml up -d
-   ```
-
-### Проверка доступности и мониторинг
-
-```bash
-# внутри VPS
-curl -i http://127.0.0.1:8080/health
-
-# снаружи (с пк или через Uptime Kuma)
-curl -i http://<IP_VPS>:8080/health
-```
-
-````markdown
-Эндпоинт `/health` всегда возвращает `200 OK` при успешной работе приложения.  
-Он используется:
-- для **healthcheck** контейнера в Docker Compose,
-- для внешнего мониторинга (например, [Uptime Kuma](https://github.com/louislam/uptime-kuma)).
-
-#### Пример настройки Uptime Kuma
-- **Тип**: HTTP(s)  
-- **URL**: `http://<IP_VPS>:8080/health`  
-- **Метод**: GET  
-- **Интервал опроса**: 60 секунд  
-- **Допустимые коды**: 200–299  
-- **Авторизация**: отсутствует  
-
-Такой монитор позволит вовремя заметить падение контейнера и настроить уведомления (Telegram, Email и др.).
-````
-
-## Структура данных и экспорт
-
-- PostgreSQL база поднимается как сервис db и использует volume для хранения данных (pgdata).
-- Экспортированные CSV складываются на хосте в `/apps/kudos-bot/exports` (том примонтирован как `./exports:/exports`).
+  ```bash
+  docker compose -f docker-compose.prod.yml up -d
+  ```
 
 ---
 
-## Архитектура проекта
+## CI/CD и мониторинг
 
-Проект организован по feature-folder структуре, где каждый функциональный модуль содержит свои модели, контроллеры и сервисы. Это упрощает поддержку и масштабирование приложения.
+### CI/CD
 
-Пример структуры папок:
+- Автоматическая сборка и пуш Docker-образа в Docker Hub при пуше в ветку `main`.
+- Теги образа: `latest` и SHA коммита.
+- SSH-доступ к VPS для обновления контейнеров через `docker compose pull && docker compose up -d`.
+- Пайплайн настроен в `.github/workflows/deploy.yml`.
 
-```
-Sources/
-├── App/                       // Корневая папка
-│   ├── Configuration/           // Конфигурация запуска
-│   │   ├── Boot.swift             // Основная настройка приложения (БД, миграции, маршруты)
-│   │   ├── Migrations.swift       // Регистрация миграций Fluent
-│   │   └── Routes.swift           // Регистрация HTTP- и ботовых маршрутов
-│   │   
-│   ├── Core/                  // Базовые сервисы и общая инфраструктура
-│   │   ├── BotController.swift    // Роутинг апдейтов Telegram → делегирует в фичи
-│   │   ├── TelegramService.swift  // Транспорт: poll, sendMessage, sendDocument
-│   │   ├── SessionStore.swift     // Хранилище состояний диалогов (in-memory)
-│   │   ├── CSVExporter.swift      // Утилита экспорта данных в CSV
-│   │   └── DTO.swift              // Общие Data Transfer Objects (модели Telegram API и др.)
-│   │
-│   └──  Features/              // Основные фичи (доменные модули)
-│       ├── BotMenu/               // Фича “Меню бота” (навигация и кнопки)
-│       │   ├── Controllers/          // BotMenuController.swift — логика экранов и кнопок
-│       │   └── Services/             // KeyboardBuilder.swift — генерация клавиатур
-│       │
-│       └── Kudos/                 // Фича “Благодарности”
-│           ├── Models/               // KudosModel.swift — модель данных Fluent
-│           ├── Controllers/          // KudosController.swift — HTTP/бот-ручки для работы с благами.
-│           └── Services/             // Логика домена (экспорт CSV, подсчёты)
-│   
-├── Run/                       // Точка входа приложения
-│   └── Main.swift             // Запуск сервера Vapor
-```
+### Мониторинг и healthcheck
 
-## Синхронизация docker-compose
+- Эндпоинт `/health` возвращает HTTP 200 OK при успешной работе приложения.
+- Используется для проверки статуса контейнера в Docker Compose и внешнего мониторинга.
+- Пример команды проверки:
 
-Рекомендуется держать локальный `docker-compose.yml` и продовый `docker-compose.prod.yml` максимально одинаковыми по сервисам (`db` и `kudos-bot`).  
-Различаться могут только настройки окружения (например, проброс портов, политика рестартов, пути к volume).  
+  ```bash
+  curl -i http://127.0.0.1:8080/health
+  ```
 
-Это позволит избежать ситуации, когда проект работает локально, но ломается на VPS из-за расхождения конфигураций.
+- Настройка мониторинга (например, Uptime Kuma):
 
-## HTTP эндпоинты
+  - Тип: HTTP(s)
+  - URL: `http://<IP_VPS>:8080/health`
+  - Метод: GET
+  - Интервал: 60 секунд
+  - Допустимые коды: 200–299
+  - Авторизация: отсутствует
 
-- `GET /health` — проверка статуса сервера, возвращает HTTP 200 OK, используется для healthcheck контейнера.
+### Очистка данных в базе
 
-## Отладочные команды
-
-- `/whoami` — скрытая команда, доступная только администраторам.  
-  Показывает ваш Telegram userId, username и значения переменных окружения.  
-  Используется для проверки корректности конфигурации `.env`.
-
-## Планы развития (TODO)
-
-- Расширить функционал команд бота.
-- Добавить тесты.
-
-
-## Очистка данных в базе
- 
-Команда ниже полностью очищает таблицу `public.kudos` и сбрасывает счетчик ID.
-
-> ⚠️ **Внимание:** действие необратимо. Все записи будут удалены без возможности восстановления.
+Для полной очистки таблицы благодарностей и сброса счетчика ID используйте команду:
 
 ```bash
 docker compose exec -it db \
   psql -U postgres -d kudos -c \
   "TRUNCATE TABLE public.kudos RESTART IDENTITY CASCADE;"
-  
+```
+
+**Внимание:** эта операция необратима и удалит все записи.
+
 ---
+
+## Планы развития
+
+- Расширение функционала команд бота.
+- Добавление новых фич: списки сотрудников, справочные разделы и другие модули.
+- Разработка тестов для повышения качества кода.
+- Улучшение интерфейса и пользовательского опыта.
+
+---
+
