@@ -13,8 +13,10 @@ final class Employee: Model, Content, @unchecked Sendable {
 
     @ID(custom: "id") var id: UUID?
     @Field(key: "full_name") var fullName: String
-    @Field(key: "position") var position: String?
+    @OptionalField(key: "position") var position: String?
     @Field(key: "is_active") var isActive: Bool
+    /// Telegram ID сотрудника (опционально, уникально)
+    @OptionalField(key: "telegram_id") var telegramId: Int64?
 
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
     @Timestamp(key: "updated_at", on: .update) var updatedAt: Date?
@@ -26,5 +28,20 @@ final class Employee: Model, Content, @unchecked Sendable {
         self.fullName = fullName
         self.position = position
         self.isActive = isActive
+    }
+}
+
+struct AddTelegramIdToEmployees: AsyncMigration {
+    func prepare(on db: Database) async throws {
+        try await db.schema(Employee.schema)
+            .field("telegram_id", .int64)
+            .unique(on: "telegram_id")
+            .update()
+    }
+
+    func revert(on db: Database) async throws {
+        try await db.schema(Employee.schema)
+            .deleteField("telegram_id")
+            .update()
     }
 }

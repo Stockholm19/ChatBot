@@ -13,4 +13,8 @@ public func migrations(_ app: Application) {
     app.migrations.add(CreateKudos())
     
     app.migrations.add(CreateEmployees())
+    
+    app.migrations.add(AddTelegramIdToEmployees())
+    app.migrations.add(AddEmployeeIdToKudos())
+    app.migrations.add(AddFromEmployeeIdToKudos())
 }

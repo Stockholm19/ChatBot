@@ -21,5 +21,8 @@ xcuserdata/
 *.sqlite-shm
 *.sqlite-wal
 
+# employees CSV
+Resources/SeedData/employees.csv
+
 # Файлы с секретными данными
 .env

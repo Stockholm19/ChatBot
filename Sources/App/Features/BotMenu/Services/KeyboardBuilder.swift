@@ -19,7 +19,8 @@ enum KeyboardBuilder {
     static func thanksMenu(isAdmin: Bool) -> TgReplyKeyboard {
         var rows: [[TgReplyKeyboard.Button]] = [
             [ .init(text: "Спасибо") ],
-            [ .init(text: "Количество переданных") ]
+            [ .init(text: "Количество переданных") ],
+            [ .init(text: "Сколько получил") ]
         ]
         if isAdmin { rows.append([ .init(text: "Экспорт CSV") ]) }
         rows.append([ .init(text: "← Назад") ])
