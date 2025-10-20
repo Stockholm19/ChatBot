@@ -20,7 +20,7 @@ enum CSVExporter {
         let delimiter = ";"
 
         // Заголовки CSV
-        var csv = "Дата и время\(delimiter)От кого (логин)\(delimiter)От кого (имя)\(delimiter)Кому (логин)\(delimiter)Причина\n"
+        var csv = "Дата и время\(delimiter)От кого (логин)\(delimiter)От кого (имя)\(delimiter)Кому (имя)\(delimiter)Причина\n"
         let df = DateFormatter()
         df.locale = Locale(identifier: "ru_RU")
         df.dateFormat = "dd.MM.yyyy HH:mm"
@@ -39,11 +39,21 @@ enum CSVExporter {
 
         // Формируем строки CSV для каждой записи
         for k in rows {
+            // Определяем человеко-понятные имена отправителя и получателя
+            var senderDisplay = k.fromName
+            if let fromEmp = try? await k.$fromEmployee.get(on: db), !fromEmp.fullName.isEmpty {
+                senderDisplay = fromEmp.fullName
+            }
+            var recipientDisplay = k.toUsername
+            if let emp = try? await k.$employee.get(on: db), !emp.fullName.isEmpty {
+                recipientDisplay = emp.fullName
+            }
+
             csv += [
                 esc(df.string(from: k.ts)),
                 esc(k.fromUsername),
-                esc(k.fromName),
-                esc(k.toUsername),
+                esc(senderDisplay),
+                esc(recipientDisplay),
                 esc(k.reason)
             ].joined(separator: delimiter) + "\n"
         }

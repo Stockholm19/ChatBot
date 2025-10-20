@@ -144,14 +144,16 @@ enum BotMenuController {
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
             return
 
-        case (.choosingEmployee, "Ввести @username вручную"):
-            await sessions.set(chatId, Session(state: .awaitingRecipient))
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Пришли @username получателя.",
-                replyMarkup: KeyboardBuilder.chooseRecipientMenu()
-            )
-            return
+//   Скрый ручной ввод пользователя по нику
+            
+//        case (.choosingEmployee, "Ввести @username вручную"):
+//            await sessions.set(chatId, Session(state: .awaitingRecipient))
+//            await TelegramService.sendMessage(
+//                app, api: api, chatId: chatId,
+//                text: "Пришли @username получателя.",
+//                replyMarkup: KeyboardBuilder.chooseRecipientMenu()
+//            )
+//            return
 
         case (.choosingEmployee, "← Назад"):
             await sessions.set(chatId, Session(state: .thanksMenu))

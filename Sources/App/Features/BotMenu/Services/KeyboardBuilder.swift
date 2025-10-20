@@ -42,7 +42,7 @@ enum KeyboardBuilder {
         if !nav.isEmpty { rows.append(nav) }
 
         // Фолбэк ручного ввода и назад
-        rows.append([ .init(text: "Ввести @username вручную") ])
+//        rows.append([ .init(text: "Ввести @username вручную") ]) // скрыл поиск по нику, раз сделал по Фамилии и имени
         rows.append([ .init(text: "← Назад") ])
 
         return TgReplyKeyboard(
