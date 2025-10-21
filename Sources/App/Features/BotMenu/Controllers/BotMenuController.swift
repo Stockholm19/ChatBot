@@ -133,6 +133,11 @@ enum BotMenuController {
         }
 
         switch (state, trimmed) {
+        // Глобальная обработка возврата к списку сотрудников
+        case (_, "← Назад к списку"):
+            let page = (await sessions.get(chatId))?.page ?? 0
+            await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page)
+            return
         // MARK: - Каталог сотрудников: навигация и выбор
         case (.choosingEmployee, "◀︎"):
             let page = (await sessions.get(chatId))?.page ?? 0
@@ -173,8 +178,25 @@ enum BotMenuController {
                 .first(),
                let empId = try? emp.requireID() {
                 
+                // запрет "самому себе" на этапе выбора
+                var senderEmployeeID: UUID? = nil
+                if let tg = userId {
+                    senderEmployeeID = try? await Employee.query(on: db)
+                        .filter(\.$telegramId == tg)
+                        .first()?
+                        .requireID()
+                }
+                if let sid = senderEmployeeID, sid == empId {
+                    await TelegramService.sendMessage(
+                        app, api: api, chatId: chatId,
+                        text: "Нельзя отправить спасибо самому себе 🙂 Выберите коллегу.",
+                        replyMarkup: KeyboardBuilder.backToEmployeesList()
+                    )
+                    await sessions.set(chatId, Session(state: .choosingEmployee, to: nil, page: (await sessions.get(chatId))?.page))
+                    app.logger.info("self_kudos_blocked ui tg:\(userId.map(String.init) ?? "nil")")
+                    return
+                }
                 await sessions.set(chatId, Session(state: .awaitingReason, to: nil, page: nil, chosenEmployeeId: empId))
-                
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
                     text: "За что благодаришь \(emp.fullName)? Одно сообщение (≥ \(minReasonLength) символов).",
@@ -356,6 +378,20 @@ enum BotMenuController {
                     .filter(\.$telegramId == tg)
                     .first()?
                     .requireID()
+            }
+
+            // 🚫 серверная защита "самому себе"
+            if let sid = senderEmployeeID, let rid = recipientId, sid == rid {
+                await TelegramService.sendMessage(
+                    app, api: api, chatId: chatId,
+                    text: "Нельзя отправить спасибо самому себе 🙂 Выберите коллегу.",
+                    replyMarkup: KeyboardBuilder.backToEmployeesList()
+                )
+                // возвращаем к выбору сотрудника и показываем актуальную страницу
+                let page = (await sessions.get(chatId))?.page ?? 0
+                await sessions.set(chatId, Session(state: .choosingEmployee, to: nil, page: page, chosenEmployeeId: nil))
+                app.logger.info("self_kudos_blocked server tg:\(userId.map(String.init) ?? "nil")")
+                return
             }
 
             // Создаём Kudos с привязкой получателя по FK (если выбран из каталога)

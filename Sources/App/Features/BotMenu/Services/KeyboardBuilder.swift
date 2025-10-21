@@ -73,4 +73,15 @@ enum KeyboardBuilder {
             one_time_keyboard: false
         )
     }
+    
+    /// Клавиатура для возврата к списку сотрудников
+    static func backToEmployeesList() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "← Назад к списку") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
 }

@@ -12,6 +12,8 @@ protocol EmployeesRepo {
     func page(_ page: Int, per: Int) async throws -> (items: [Employee], total: Int)
     func search(_ q: String, page: Int, per: Int) async throws -> (items: [Employee], total: Int)
     func get(_ id: UUID) async throws -> Employee?
+    /// Lookup employee by Telegram user ID
+    func findByTelegramId(_ tgId: Int64) async throws -> Employee?
 }
 
 struct FluentEmployeesRepo: EmployeesRepo {
@@ -46,5 +48,11 @@ struct FluentEmployeesRepo: EmployeesRepo {
 
     func get(_ id: UUID) async throws -> Employee? {
         try await Employee.find(id, on: db)
+    }
+
+    func findByTelegramId(_ tgId: Int64) async throws -> Employee? {
+        try await Employee.query(on: db)
+            .filter(\.$telegramId == tgId)
+            .first()
     }
 }
