@@ -289,14 +289,33 @@ enum BotMenuController {
             return
 
         case (.thanksMenu, "Экспорт CSV") where isAdmin(userId: userId, username: username):
+
+            // Генерируем уникальное имя файла для каждого запроса
+            let uniqueFilename = "kudos_export_\(UUID().uuidString).csv"
             let tmpPath = FileManager.default.temporaryDirectory
-                .appendingPathComponent("kudos_export.csv").path
-            try? await CSVExporter.exportKudos(db: db, to: tmpPath)
-            try? await TelegramService.sendDocument(
-                app, api: api, chatId: chatId,
-                filePath: tmpPath,
-                caption: "Экспорт благодарностей"
-            )
+                .appendingPathComponent(uniqueFilename).path
+
+            // Используем 'defer' для гарантированной очистки файла после использования
+            defer {
+                do {
+                    try FileManager.default.removeItem(atPath: tmpPath)
+                    app.logger.info("Successfully cleaned up temporary file: \(tmpPath)")
+                } catch {
+                    app.logger.warning("Failed to clean up temporary file: \(tmpPath). Error: \(error)")
+                }
+            }
+            
+            do {
+                try await CSVExporter.exportKudos(db: db, to: tmpPath)
+                try await TelegramService.sendDocument(
+                    app, api: api, chatId: chatId,
+                    filePath: tmpPath,
+                    caption: "Экспорт благодарностей"
+                )
+            } catch {
+                app.logger.error("Failed to export or send CSV: \(error)")
+                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Не удалось создать или отправить экспорт. Пожалуйста, проверьте логи.")
+            }
             return
 
         case (.thanksMenu, "← Назад"):
