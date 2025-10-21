@@ -22,21 +22,14 @@ public func configure(_ app: Application) throws {
     // Регистрация маршрутов
     try routes(app)
 
-    // Автоматическое применение миграций при старте (без падения в dev)
-    // MARK: - Seed employees from Resources/SeedData/employees.csv (run once if empty)
+    // Автоматическое применение миграций и СИНХРОНИЗАЦИЯ сотрудников при старте
     Task {
         do {
             try await app.autoMigrate()
-            
-            let count = try await Employee.query(on: app.db).count()
-            if count == 0 {
-                app.logger.info("Employees table empty. Seeding from CSV…")
-                try await seedEmployees(app: app)
-            } else {
-                app.logger.info("Employees table has \(count) rows. Skipping seed.")
-            }
+            app.logger.info("Starting employees synchronization from CSV...")
+            try await synchronizeEmployees(app: app)
         } catch {
-            app.logger.critical("Migrate/Seed failed: \(error)")
+            app.logger.critical("Migrate/Sync failed: \(error)")
         }
     }
     
@@ -46,36 +39,87 @@ public func configure(_ app: Application) throws {
     app.http.server.configuration.port = Environment.get("PORT").flatMap(Int.init) ?? 8080
 }
 
-private func seedEmployees(app: Application) async throws {
+/// Синхронизирует сотрудников из CSV-файла с базой данных.
+private func synchronizeEmployees(app: Application) async throws {
     let path = app.directory.resourcesDirectory + "SeedData/employees.csv"
-    app.logger.info("Seed: reading \(path)")
+    app.logger.info("Sync: reading \(path)")
 
     guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
           let content = String(data: data, encoding: .utf8) else {
-        app.logger.error("Seed: cannot read employees.csv at \(path)")
+        app.logger.error("Sync: cannot read employees.csv at \(path)")
         return
     }
 
-    let rows = content.split(separator: "\n").dropFirst()
+    // 1. Парсим CSV сразу в неизменяемый словарь [FullName: Data], чтобы избежать проблем с concurrency.
+    let csvRows = content.split(separator: "\n").dropFirst()
+    let csvEmployees = Dictionary(uniqueKeysWithValues: csvRows.compactMap { row -> (String, (isActive: Bool, telegramId: Int64?))? in
+        let cols = row.split(separator: ",", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard cols.count >= 3 else { return nil }
+
+        let fullName = String(cols[0])
+        guard !fullName.isEmpty else { return nil }
+
+        let isActive = ["да", "yes", "true", "1"].contains(cols[1].lowercased())
+        let telegramId = Int64(cols[2])
+
+        return (fullName, (isActive: isActive, telegramId: telegramId))
+    })
+
     try await app.db.transaction { db in
-        var inserted = 0
-        for row in rows {
-            let cols = row.split(separator: ",", omittingEmptySubsequences: false)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            guard cols.count >= 3 else { continue }
+        // 2. Загружаем всех существующих сотрудников из БД в словарь для быстрого доступа
+        let allDbEmployees = try await Employee.query(on: db).all()
+        var dbEmployeesDict = Dictionary(uniqueKeysWithValues: allDbEmployees.map { ($0.fullName, $0) })
+        
+        var createdCount = 0
+        var updatedCount = 0
+        var deactivatedCount = 0
 
-            let fullName = cols[0]
-            if fullName.isEmpty { continue }
+        // 3. Проходимся по сотрудникам из CSV
+        for (fullName, csvData) in csvEmployees {
+            if let existingEmployee = dbEmployeesDict[fullName] {
+                // СЦЕНАРИЙ: ОБНОВЛЕНИЕ. Сотрудник найден в базе.
+                var needsUpdate = false
+                if existingEmployee.isActive != csvData.isActive {
+                    existingEmployee.isActive = csvData.isActive
+                    needsUpdate = true
+                }
+                if existingEmployee.telegramId != csvData.telegramId {
+                    existingEmployee.telegramId = csvData.telegramId
+                    needsUpdate = true
+                }
 
-            let active = ["да","yes","true","1"].contains(cols[1].lowercased())
-            let tgId = Int64(cols[2])
-
-            var e = Employee(fullName: String(fullName), position: nil, isActive: active)
-            e.telegramId = tgId
-
-            try await e.create(on: db)
-            inserted += 1
+                if needsUpdate {
+                    try await existingEmployee.update(on: db)
+                    updatedCount += 1
+                }
+                
+                // Удаляем из словаря, чтобы пометить его как "обработанный"
+                dbEmployeesDict.removeValue(forKey: fullName)
+                
+            } else {
+                // СЦЕНАРИЙ: ДОБАВЛЕНИЕ. Сотрудника нет в базе.
+                let newEmployee = Employee(
+                    fullName: fullName,
+                    position: nil,
+                    isActive: csvData.isActive
+                )
+                newEmployee.telegramId = csvData.telegramId
+                try await newEmployee.create(on: db)
+                createdCount += 1
+            }
         }
-        app.logger.info("Seed: inserted \(inserted) employees")
+
+        // 4. СЦЕНАРИЙ: ДЕАКТИВАЦИЯ.
+        // Все, кто остался в `dbEmployeesDict`, есть в базе, но отсутствуют в CSV.
+        for (_, oldEmployee) in dbEmployeesDict {
+            if oldEmployee.isActive { // Деактивируем только активных
+                oldEmployee.isActive = false
+                try await oldEmployee.update(on: db)
+                deactivatedCount += 1
+            }
+        }
+        
+        app.logger.info("Synchronization complete. Created: \(createdCount), Updated: \(updatedCount), Deactivated: \(deactivatedCount).")
     }
 }
