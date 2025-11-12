@@ -165,6 +165,107 @@ docker compose logs -f
   docker compose -f docker-compose.prod.yml up -d
   ```
 
+### Обновление сотрудников вручную
+
+Для ручного обновления списка сотрудников выполните следующие шаги:
+
+1. Скопируйте обновлённый файл `employees.csv` на VPS, например в директорию `/tmp`:
+
+   ```bash
+   scp employees.csv user@your-vps:/tmp/employees.csv
+   ```
+
+2. Скопируйте файл внутрь контейнера PostgreSQL (замените `db` на имя вашего контейнера, если отличается):
+
+   ```bash
+   docker cp /tmp/employees.csv db:/employees.csv
+   ```
+
+3. Подключитесь к контейнеру PostgreSQL:
+
+   ```bash
+   docker exec -it db psql -U postgres -d kudos
+   ```
+
+4. В интерактивной консоли PostgreSQL выполните следующий SQL для создания временной таблицы, загрузки данных и синхронизации основной таблицы сотрудников:
+
+   ```sql
+   -- Создаем временную таблицу для импорта
+   CREATE TEMP TABLE tmp_employees (
+       full_name TEXT,
+       is_active TEXT,
+       telegram_id BIGINT
+   );
+
+   -- Импортируем данные из CSV
+   COPY tmp_employees(full_name, is_active, telegram_id)
+   FROM '/employees.csv'
+   DELIMITER ','
+   CSV HEADER;
+
+   -- Обновляем существующих сотрудников
+   UPDATE employees e
+   SET
+       full_name = t.full_name,
+       is_active = (t.is_active = 'Да'),
+       telegram_id = t.telegram_id
+   FROM tmp_employees t
+   WHERE e.telegram_id = t.telegram_id;
+
+   -- Добавляем новых сотрудников
+   INSERT INTO employees (full_name, is_active, telegram_id)
+   SELECT t.full_name, (t.is_active = 'Да'), t.telegram_id
+   FROM tmp_employees t
+   WHERE NOT EXISTS (
+       SELECT 1 FROM employees e WHERE e.telegram_id = t.telegram_id
+   );
+
+   -- Деактивируем сотрудников, которых нет в новом списке
+   UPDATE employees
+   SET is_active = FALSE
+   WHERE telegram_id NOT IN (SELECT telegram_id FROM tmp_employees);
+
+   -- Очистка временной таблицы не обязательна, так как она временная
+   ```
+
+5. Выйдите из psql (`\q`) и перезапустите контейнер бота для применения изменений:
+
+   ```bash
+   docker compose -f docker-compose.prod.yml restart kudos-bot
+   ```
+
+#### Минимальный вариант обновления сотрудников
+
+Этот вариант используется, когда необходимо полностью очистить таблицу сотрудников и загрузить список заново.
+
+```bash
+docker cp /apps/kudos-bot/employees.csv kudos-db:/tmp/employees.csv
+```
+
+```bash
+docker compose -f docker-compose.prod.yml exec db \
+  psql -U postgres -d kudos -c "
+  TRUNCATE TABLE employees RESTART IDENTITY CASCADE;
+  CREATE TEMP TABLE tmp_employees (
+      full_name TEXT,
+      is_active TEXT,
+      telegram_id BIGINT
+  );
+  COPY tmp_employees(full_name, is_active, telegram_id)
+  FROM '/tmp/employees.csv'
+  DELIMITER ','
+  CSV HEADER;
+  INSERT INTO employees (full_name, is_active, telegram_id)
+  SELECT full_name, (is_active = 'Да'), telegram_id FROM tmp_employees;
+  "
+```
+
+```bash
+Scripts/
+```
+
+Этот способ полностью перезаписывает таблицу сотрудников и не сохраняет старые данные, но подходит для полной перезагрузки.
+
 ---
 
 ## CI/CD и мониторинг
@@ -216,4 +317,3 @@ docker compose exec -it db \
 - Улучшение интерфейса и пользовательского опыта.
 
 ---
-
