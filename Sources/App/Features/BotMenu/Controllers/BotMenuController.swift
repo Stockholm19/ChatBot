@@ -212,7 +212,7 @@ enum BotMenuController {
             }
 
         // MARK: Главное меню → подменю «Спасибо»
-        case (.mainMenu, "Передать спасибо"):
+        case (.mainMenu, "Спасибо"):
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
                 text: "Меню благодарностей:",
@@ -222,7 +222,7 @@ enum BotMenuController {
             return
 
         // MARK: Подменю «Спасибо» — запустить сценарий
-        case (.thanksMenu, "Спасибо"):
+        case (.thanksMenu, "Передать спасибо"):
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0)
             return
 
