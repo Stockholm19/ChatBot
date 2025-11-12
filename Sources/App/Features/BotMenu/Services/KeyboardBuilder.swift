@@ -10,7 +10,7 @@ import Vapor
 enum KeyboardBuilder {
     static func mainMenu() -> TgReplyKeyboard {
         TgReplyKeyboard(
-            keyboard: [[ .init(text: "Передать спасибо") ]],
+            keyboard: [[ .init(text: "Спасибо") ]],
             resize_keyboard: true,
             one_time_keyboard: false
         )
@@ -18,7 +18,7 @@ enum KeyboardBuilder {
 
     static func thanksMenu(isAdmin: Bool) -> TgReplyKeyboard {
         var rows: [[TgReplyKeyboard.Button]] = [
-            [ .init(text: "Спасибо") ],
+            [ .init(text: "Передать спасибо") ],
             [ .init(text: "Количество переданных") ],
             [ .init(text: "Сколько получил") ]
         ]
