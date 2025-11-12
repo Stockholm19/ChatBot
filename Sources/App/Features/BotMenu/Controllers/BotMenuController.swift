@@ -114,6 +114,7 @@ enum BotMenuController {
         let state = session.state
         let currentTo = session.to
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let t = trimmed.normalizedNav
 
         // Debug: /whoami — показывает распознанный userId/username и env (только для админов)
         if trimmed == "/whoami" {
@@ -132,19 +133,19 @@ enum BotMenuController {
             return
         }
 
-        switch (state, trimmed) {
+        switch (state, t) {
         // Глобальная обработка возврата к списку сотрудников
         case (_, "← Назад к списку"):
             let page = (await sessions.get(chatId))?.page ?? 0
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page)
             return
         // MARK: - Каталог сотрудников: навигация и выбор
-        case (.choosingEmployee, "◀︎"):
+        case (.choosingEmployee, "◀"), (.choosingEmployee, "<"), (.choosingEmployee, "⬅"), (.choosingEmployee, "←"):
             let page = (await sessions.get(chatId))?.page ?? 0
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1))
             return
 
-        case (.choosingEmployee, "▶︎"):
+        case (.choosingEmployee, "▶"), (.choosingEmployee, ">"), (.choosingEmployee, "➡"), (.choosingEmployee, "→"):
             let page = (await sessions.get(chatId))?.page ?? 0
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
             return
@@ -206,7 +207,7 @@ enum BotMenuController {
             } else {
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
-                    text: "Не нашёл такого сотрудника. Листай ◀︎/▶︎ или выбери из списка."
+                    text: "Не нашёл такого сотрудника. Листай ◀/▶ или выбери из списка."
                 )
                 return
             }
@@ -450,5 +451,14 @@ enum BotMenuController {
             await sessions.set(chatId, Session(state: .mainMenu))
             return
         }
+    }
+}
+
+extension String {
+    /// Убираем вариационные селекторы (FE0E/FE0F) и пробелы по краям.
+    var normalizedNav: String {
+        let disallowed: [UnicodeScalar] = [UnicodeScalar(0xFE0E)!, UnicodeScalar(0xFE0F)!]
+        let filtered = self.unicodeScalars.filter { !disallowed.contains($0) }
+        return String(String.UnicodeScalarView(filtered)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
