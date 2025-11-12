@@ -2,9 +2,11 @@
 
 ## Описание проекта
 
-Kudos Bot — это Telegram-бот, написанный на **Swift (Vapor)** и построенный по модульной архитектуре с кастомным стартовым меню. Каждая кнопка в меню представляет собой отдельную функциональную фичу (например, «Благодарности»), что позволяет легко расширять проект новыми модулями.
+Kudos Bot — корпоративный Telegram-бот, разработанный на Swift (Vapor 4).
+Он помогает сотрудникам компании выражать благодарности коллегам, отслеживать статистику и управлять внутренними активностями.
 
-Основная реализованная функция — система благодарностей (Kudos): пользователи могут отправлять благодарности коллегам, просматривать статистику и экспортировать данные в CSV. Проект разворачивается через Docker и включает CI/CD пайплайн для автоматического деплоя.
+Проект построен по feature-folder архитектуре, что делает каждую часть системы — (бот-меню, каталог сотрудников, благодарности, экспорт CSV и пр.) — независимым модулем.
+Бот использует PostgreSQL для хранения данных, Docker Compose для контейнеризации и CI/CD GitHub Actions для автоматического деплоя на VPS.
 
 ---
 
@@ -13,7 +15,7 @@ Kudos Bot — это Telegram-бот, написанный на **Swift (Vapor)*
 - Приветственное меню с кнопками, без необходимости ввода команд вручную.
 - Передача благодарностей коллегам через пошаговый сценарий:
   - выбор сотрудника из постраничного каталога (по 10 человек на экран),
-  - ввод причины благодарности (не менее 20 символов),
+  - ввод благодарности (не менее 20 символов),
   - сохранение благодарности в базе данных.
 - Статистика:
   - количество отправленных благодарностей,
@@ -73,6 +75,9 @@ Sources/
 │       └── employees.template.csv
 │
 ├── exports/                        # Экспортированные CSV-файлы
+│
+├── Scripts/                       # SQL-скрипты для ручной синхронизации сотрудников
+│   └── sync_employees.sql
 │
 ├── docker-compose.yml
 ├── docker-compose.prod.yml
@@ -165,108 +170,119 @@ docker compose logs -f
   docker compose -f docker-compose.prod.yml up -d
   ```
 
-### Обновление сотрудников вручную
+## Обновление сотрудников вручную
 
-Для ручного обновления списка сотрудников выполните следующие шаги:
+Для обновления списка сотрудников предусмотрены два сценария:
 
-1. Скопируйте обновлённый файл `employees.csv` на VPS, например в директорию `/tmp`:
+### 1. Safe sync (рекомендованный)
 
-   ```bash
-   scp employees.csv user@your-vps:/tmp/employees.csv
-   ```
+Этот способ обновляет, добавляет и деактивирует сотрудников, не затрагивая таблицу благодарностей. Используется SQL-скрипт `Scripts/sync_employees.sql`, который синхронизирует данные из CSV с базой, сохраняя целостность связей.
 
-2. Скопируйте файл внутрь контейнера PostgreSQL (замените `db` на имя вашего контейнера, если отличается):
-
-   ```bash
-   docker cp /tmp/employees.csv db:/employees.csv
-   ```
-
-3. Подключитесь к контейнеру PostgreSQL:
-
-   ```bash
-   docker exec -it db psql -U postgres -d kudos
-   ```
-
-4. В интерактивной консоли PostgreSQL выполните следующий SQL для создания временной таблицы, загрузки данных и синхронизации основной таблицы сотрудников:
-
-   ```sql
-   -- Создаем временную таблицу для импорта
-   CREATE TEMP TABLE tmp_employees (
-       full_name TEXT,
-       is_active TEXT,
-       telegram_id BIGINT
-   );
-
-   -- Импортируем данные из CSV
-   COPY tmp_employees(full_name, is_active, telegram_id)
-   FROM '/employees.csv'
-   DELIMITER ','
-   CSV HEADER;
-
-   -- Обновляем существующих сотрудников
-   UPDATE employees e
-   SET
-       full_name = t.full_name,
-       is_active = (t.is_active = 'Да'),
-       telegram_id = t.telegram_id
-   FROM tmp_employees t
-   WHERE e.telegram_id = t.telegram_id;
-
-   -- Добавляем новых сотрудников
-   INSERT INTO employees (full_name, is_active, telegram_id)
-   SELECT t.full_name, (t.is_active = 'Да'), t.telegram_id
-   FROM tmp_employees t
-   WHERE NOT EXISTS (
-       SELECT 1 FROM employees e WHERE e.telegram_id = t.telegram_id
-   );
-
-   -- Деактивируем сотрудников, которых нет в новом списке
-   UPDATE employees
-   SET is_active = FALSE
-   WHERE telegram_id NOT IN (SELECT telegram_id FROM tmp_employees);
-
-   -- Очистка временной таблицы не обязательна, так как она временная
-   ```
-
-5. Выйдите из psql (`\q`) и перезапустите контейнер бота для применения изменений:
-
-   ```bash
-   docker compose -f docker-compose.prod.yml restart kudos-bot
-   ```
-
-#### Минимальный вариант обновления сотрудников
-
-Этот вариант используется, когда необходимо полностью очистить таблицу сотрудников и загрузить список заново.
+Пошаговая инструкция:
 
 ```bash
-docker cp /apps/kudos-bot/employees.csv kudos-db:/tmp/employees.csv
+# Скопируйте актуальный CSV файл сотрудников в контейнер базы данных
+docker compose -f docker-compose.prod.yml exec db sh -c "cat > /tmp/employees.csv" < Resources/SeedData/employees.csv
+
+# Подключитесь к контейнеру базы данных
+docker compose -f docker-compose.prod.yml exec db psql -U postgres -d kudos
 ```
+
+Внутри psql выполните:
+
+```sql
+-- Загрузите CSV во временную таблицу
+CREATE TEMP TABLE tmp_employees (
+    full_name TEXT,
+    is_active TEXT,
+    telegram_id TEXT
+);
+
+COPY tmp_employees FROM '/tmp/employees.csv' WITH CSV HEADER;
+
+-- Запустите скрипт синхронизации
+\i /app/Scripts/sync_employees.sql
+```
+
+После выполнения синхронизации выполните перезапуск бота:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec db \
-  psql -U postgres -d kudos -c "
-  TRUNCATE TABLE employees RESTART IDENTITY CASCADE;
-  CREATE TEMP TABLE tmp_employees (
-      full_name TEXT,
-      is_active TEXT,
-      telegram_id BIGINT
-  );
-  COPY tmp_employees(full_name, is_active, telegram_id)
-  FROM '/tmp/employees.csv'
-  DELIMITER ','
-  CSV HEADER;
-  INSERT INTO employees (full_name, is_active, telegram_id)
-  SELECT full_name, (is_active = 'Да'), telegram_id FROM tmp_employees;
-  "
+docker compose -f docker-compose.prod.yml restart kudos-bot
 ```
-
-```bash
-Scripts/
-```
-
-Этот способ полностью перезаписывает таблицу сотрудников и не сохраняет старые данные, но подходит для полной перезагрузки.
 
 ---
+
+### 2. Полная перезагрузка (reset)
+
+Этот способ полностью очищает таблицу сотрудников и загружает данные из CSV заново. При этом все связанные данные, включая благодарности, сохраняются, но связи могут быть нарушены, поэтому рекомендуется использовать с осторожностью.
+
+Пошаговая инструкция:
+
+```bash
+# Скопируйте актуальный CSV файл сотрудников в контейнер базы данных
+docker compose -f docker-compose.prod.yml exec db sh -c "cat > /tmp/employees.csv" < Resources/SeedData/employees.csv
+
+# Подключитесь к базе данных
+docker compose -f docker-compose.prod.yml exec db psql -U postgres -d kudos
+```
+
+Внутри psql выполните:
+
+```sql
+TRUNCATE TABLE employees RESTART IDENTITY CASCADE;
+
+CREATE TEMP TABLE tmp_employees (
+    full_name TEXT,
+    is_active TEXT,
+    telegram_id TEXT
+);
+
+COPY tmp_employees FROM '/tmp/employees.csv' WITH CSV HEADER;
+
+INSERT INTO employees (full_name, is_active, telegram_id)
+SELECT
+    full_name,
+    CASE WHEN LOWER(is_active) = 'да' THEN true ELSE false END,
+    telegram_id
+FROM tmp_employees;
+```
+
+После загрузки данных выполните перезапуск бота:
+
+```bash
+docker compose -f docker-compose.prod.yml restart kudos-bot
+```
+
+---
+
+### Проверка результатов
+
+После выполнения синхронизации или перезагрузки рекомендуется проверить состояние таблицы сотрудников:
+
+```sql
+SELECT COUNT(*) FROM employees;
+
+SELECT * FROM employees LIMIT 5;
+```
+
+---
+
+### Где хранится CSV
+
+- В продакшн-среде CSV файл сотрудников должен быть доступен в контейнере базы по пути `/tmp/employees.csv`.
+- В репозитории исходных данных CSV находится в `Resources/SeedData/employees.csv`.
+
+---
+
+### Единоразовая настройка UUID
+
+Если в вашей базе данных ещё не настроено использование UUID для идентификаторов сотрудников, выполните следующие команды в psql:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+ALTER TABLE employees ALTER COLUMN id SET DEFAULT gen_random_uuid();
+```
+
 
 ## CI/CD и мониторинг
 
