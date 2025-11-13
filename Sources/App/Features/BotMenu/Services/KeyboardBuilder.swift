@@ -31,18 +31,28 @@ enum KeyboardBuilder {
         )
     }
 
-    /// Постраничный список сотрудников (по одному имени в строке) + навигация
+    /// Постраничный список сотрудников (по два имени в строке) + навигация
     static func employeesPage(names: [String], hasPrev: Bool, hasNext: Bool) -> TgReplyKeyboard {
-        var rows: [[TgReplyKeyboard.Button]] = names.map { [ .init(text: $0) ] }
+        // Сетка 2×N: группируем имена по две кнопки в ряд
+        var rows: [[TgReplyKeyboard.Button]] = []
+        var i = 0
+        while i < names.count {
+            if i + 1 < names.count {
+                rows.append([ .init(text: names[i]), .init(text: names[i+1]) ])
+                i += 2
+            } else {
+                rows.append([ .init(text: names[i]) ])
+                i += 1
+            }
+        }
 
-        // Навигация ◀︎ / ▶︎
+        // Навигация ◀ / ▶ ("чистые" символы без FE0E/FE0F)
         var nav: [TgReplyKeyboard.Button] = []
-        if hasPrev { nav.append(.init(text: "◀︎")) }
-        if hasNext { nav.append(.init(text: "▶︎")) }
+        if hasPrev { nav.append(.init(text: "◀")) }
+        if hasNext { nav.append(.init(text: "▶")) }
         if !nav.isEmpty { rows.append(nav) }
 
-        // Фолбэк ручного ввода и назад
-//        rows.append([ .init(text: "Ввести @username вручную") ]) // скрыл поиск по нику, раз сделал по Фамилии и имени
+        // Кнопка назад
         rows.append([ .init(text: "← Назад") ])
 
         return TgReplyKeyboard(
