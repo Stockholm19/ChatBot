@@ -171,41 +171,23 @@ docker compose logs -f
   ```
 
 ## Обновление сотрудников на VPS
- 
-Подходит для добавления новых, изменения существующих и деактивации удалённых сотрудников.
-
----
-
-## 1. Обновите CSV на сервере
-
-Файл сотрудников на VPS находится здесь:
-
-```
-/apps/kudos-bot/employees.csv
-```
-
-Отредактируйте его:
-
-```bash
-nano /apps/kudos-bot/employees.csv
-```
-
----
-
-## 2. Скопируйте CSV в контейнер базы данных
-
-```bash
-cd /apps/kudos-bot
-
-docker compose -f docker-compose.prod.yml exec -T db   sh -c "cat > /tmp/employees.csv" < employees.csv
-```
-
----
-
-## 3. Выполните синхронизацию (safe-sync)
-
-```bash
-docker compose -f docker-compose.prod.yml exec -T db   psql -U postgres -d kudos << 'SQL'
+   ```bash
+    cd /apps/kudos-bot
+   ```
+    
+    
+   ```bash
+   nano employees.csv
+   ```
+    
+   ```bash
+   docker compose -f docker-compose.prod.yml exec -T db \
+  sh -c "cat > /tmp/employees.csv" < employees.csv
+   ```
+      
+   ```bash
+   docker compose -f docker-compose.prod.yml exec -T db \
+  psql -U postgres -d kudos << 'SQL'
 CREATE TEMP TABLE _emp(
   full_name   text,
   is_active   text,
@@ -240,25 +222,13 @@ WHERE NOT EXISTS (
   SELECT 1 FROM _emp c WHERE c.telegram_id = e.telegram_id
 );
 SQL
-```
-
----
-
-## 4. Перезапустите бота
-
-```bash
-docker compose -f docker-compose.prod.yml restart kudos-bot
-```
-
----
-
-## 5. Проверка результата
-
-```bash
-docker compose -f docker-compose.prod.yml exec db   psql -U postgres -d kudos -c "SELECT COUNT(*) FROM employees;"
-
-docker compose -f docker-compose.prod.yml exec db   psql -U postgres -d kudos -c "SELECT full_name, is_active FROM employees ORDER BY full_name LIMIT 10;"
-```
+   ```
+   
+   ```bash
+   docker compose -f docker-compose.prod.yml restart kudos-bot
+   ```
+ 
+ 
 
 ---
 
