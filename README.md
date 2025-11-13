@@ -170,84 +170,81 @@ docker compose logs -f
   docker compose -f docker-compose.prod.yml up -d
   ```
 
-## Обновление сотрудников вручную
+## Обновление сотрудников на VPS
+ 
+Подходит для добавления новых, изменения существующих и деактивации удалённых сотрудников.
 
-Для обновления списка сотрудников предусмотрены два сценария:
+---
 
-### 1. Safe sync (рекомендованный)
+## 1. Обновите CSV на сервере
 
-Этот способ обновляет, добавляет и деактивирует сотрудников, не затрагивая таблицу благодарностей. Используется SQL-скрипт `Scripts/sync_employees.sql`, который синхронизирует данные из CSV с базой, сохраняя целостность связей.
+Файл сотрудников на VPS находится здесь:
 
-Пошаговая инструкция:
-
-```bash
-# Скопируйте актуальный CSV файл сотрудников в контейнер базы данных
-docker compose -f docker-compose.prod.yml exec db sh -c "cat > /tmp/employees.csv" < Resources/SeedData/employees.csv
-
-# Подключитесь к контейнеру базы данных
-docker compose -f docker-compose.prod.yml exec db psql -U postgres -d kudos
+```
+/apps/kudos-bot/employees.csv
 ```
 
-Внутри psql выполните:
-
-```sql
--- Загрузите CSV во временную таблицу
-CREATE TEMP TABLE tmp_employees (
-    full_name TEXT,
-    is_active TEXT,
-    telegram_id TEXT
-);
-
-COPY tmp_employees FROM '/tmp/employees.csv' WITH CSV HEADER;
-
--- Запустите скрипт синхронизации
-\i /app/Scripts/sync_employees.sql
-```
-
-После выполнения синхронизации выполните перезапуск бота:
+Отредактируйте его:
 
 ```bash
-docker compose -f docker-compose.prod.yml restart kudos-bot
+nano /apps/kudos-bot/employees.csv
 ```
 
 ---
 
-### 2. Полная перезагрузка (reset)
-
-Этот способ полностью очищает таблицу сотрудников и загружает данные из CSV заново. При этом все связанные данные, включая благодарности, сохраняются, но связи могут быть нарушены, поэтому рекомендуется использовать с осторожностью.
-
-Пошаговая инструкция:
+## 2. Скопируйте CSV в контейнер базы данных
 
 ```bash
-# Скопируйте актуальный CSV файл сотрудников в контейнер базы данных
-docker compose -f docker-compose.prod.yml exec db sh -c "cat > /tmp/employees.csv" < Resources/SeedData/employees.csv
+cd /apps/kudos-bot
 
-# Подключитесь к базе данных
-docker compose -f docker-compose.prod.yml exec db psql -U postgres -d kudos
+docker compose -f docker-compose.prod.yml exec -T db   sh -c "cat > /tmp/employees.csv" < employees.csv
 ```
 
-Внутри psql выполните:
+---
 
-```sql
-TRUNCATE TABLE employees RESTART IDENTITY CASCADE;
+## 3. Выполните синхронизацию (safe-sync)
 
-CREATE TEMP TABLE tmp_employees (
-    full_name TEXT,
-    is_active TEXT,
-    telegram_id TEXT
+```bash
+docker compose -f docker-compose.prod.yml exec -T db   psql -U postgres -d kudos << 'SQL'
+CREATE TEMP TABLE _emp(
+  full_name   text,
+  is_active   text,
+  telegram_id bigint
 );
 
-COPY tmp_employees FROM '/tmp/employees.csv' WITH CSV HEADER;
+COPY _emp FROM '/tmp/employees.csv' WITH (FORMAT csv, HEADER true);
 
-INSERT INTO employees (full_name, is_active, telegram_id)
+-- 1) Обновляем существующих
+UPDATE employees e
+SET
+  full_name = trim(c.full_name),
+  is_active = CASE WHEN c.is_active ILIKE 'да' THEN true ELSE false END
+FROM _emp c
+WHERE e.telegram_id = c.telegram_id;
+
+-- 2) Добавляем новых сотрудников
+INSERT INTO employees(full_name, is_active, telegram_id)
 SELECT
-    full_name,
-    CASE WHEN LOWER(is_active) = 'да' THEN true ELSE false END,
-    telegram_id
-FROM tmp_employees;
+  trim(full_name),
+  CASE WHEN is_active ILIKE 'да' THEN true ELSE false END,
+  telegram_id
+FROM _emp c
+WHERE NOT EXISTS (
+  SELECT 1 FROM employees e WHERE e.telegram_id = c.telegram_id
+);
+
+-- 3) Деактивируем тех, кого нет в CSV
+UPDATE employees e
+SET is_active = false
+WHERE NOT EXISTS (
+  SELECT 1 FROM _emp c WHERE c.telegram_id = e.telegram_id
+);
+SQL
 ```
 
-После загрузки данных выполните перезапуск бота:
+---
+
+## 4. Перезапустите бота
 
 ```bash
 docker compose -f docker-compose.prod.yml restart kudos-bot
@@ -255,33 +252,21 @@ docker compose -f docker-compose.prod.yml restart kudos-bot
 
 ---
 
-### Проверка результатов
+## 5. Проверка результата
 
-После выполнения синхронизации или перезагрузки рекомендуется проверить состояние таблицы сотрудников:
+```bash
+docker compose -f docker-compose.prod.yml exec db   psql -U postgres -d kudos -c "SELECT COUNT(*) FROM employees;"
 
-```sql
-SELECT COUNT(*) FROM employees;
-
-SELECT * FROM employees LIMIT 5;
+docker compose -f docker-compose.prod.yml exec db   psql -U postgres -d kudos -c "SELECT full_name, is_active FROM employees ORDER BY full_name LIMIT 10;"
 ```
 
 ---
 
-### Где хранится CSV
+## Примечания
 
-- В продакшн-среде CSV файл сотрудников должен быть доступен в контейнере базы по пути `/tmp/employees.csv`.
-- В репозитории исходных данных CSV находится в `Resources/SeedData/employees.csv`.
-
----
-
-### Единоразовая настройка UUID
-
-Если в вашей базе данных ещё не настроено использование UUID для идентификаторов сотрудников, выполните следующие команды в psql:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-ALTER TABLE employees ALTER COLUMN id SET DEFAULT gen_random_uuid();
-```
+- Safe-sync **не удаляет благодарности** и **не портит связи**, так как обновление выполняется по `telegram_id`.
+- Сотрудники, которых нет в CSV, автоматически получают `is_active = false`.
+- Для аварийного полного сброса (reset) можно использовать TRUNCATE, но это редко нужно.
 
 
 ## CI/CD и мониторинг
