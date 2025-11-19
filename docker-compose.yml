@@ -21,6 +21,8 @@ services:
       BOT_TOKEN: ${BOT_TOKEN}
       TZ: ${TZ:-UTC}
       ADMIN_IDS: ${ADMIN_IDS}
+      REMINDER_CHAT_ID: ${REMINDER_CHAT_ID}
+      REMINDER_TIMES: ${REMINDER_TIMES}
     volumes:
       - ./exports:/exports
     depends_on:

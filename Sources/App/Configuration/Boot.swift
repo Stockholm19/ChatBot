@@ -34,9 +34,12 @@ public func configure(_ app: Application) throws {
     }
     
     
-    // Слушать на всех интерфейсах (чтобы было доступно извне контейнера)
+    // Настройки HTTP. Слушать на всех интерфейсах (чтобы было доступно извне контейнера)
     app.http.server.configuration.hostname = Environment.get("HOST") ?? "0.0.0.0"
     app.http.server.configuration.port = Environment.get("PORT").flatMap(Int.init) ?? 8080
+    
+    // Планировщик напоминаний
+    RemindersScheduler.setup(app: app)
 }
 
 /// Синхронизирует сотрудников из CSV-файла с базой данных.
