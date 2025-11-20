@@ -21,8 +21,8 @@ final class RemindersService {
         self.client = app.client
         self.chatId = Environment.get("REMINDER_CHAT_ID") ?? ""
         self.botToken = Environment.get("BOT_TOKEN") ?? ""
-        print("🟡 RemindersService INIT. chatId=\(chatId) tokenEmpty=\(botToken.isEmpty)")
         loadMessages(app: app)
+        app.logger.info("RemindersService initialized. chatId=\(chatId), tokenEmpty=\(botToken.isEmpty)")
     }
 
     private func loadMessages(app: Application) {
@@ -32,9 +32,9 @@ final class RemindersService {
             let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
             let decoded = try JSONDecoder().decode([String].self, from: data)
             self.messages = decoded
-            print("📦 Loaded \(messages.count) reminder messages")
+            app.logger.info("RemindersService: loaded \(messages.count) reminder messages")
         } catch {
-            print("⚠️ Failed to load messages.json: \(error)")
+            app.logger.error("RemindersService: failed to load messages.json: \(error)")
             self.messages = ["Не забывайте говорить спасибо коллегам 🙂"]
         }
     }

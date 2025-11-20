@@ -40,7 +40,7 @@ struct RemindersScheduler {
         guard parts.count == 2,
               let hour = Int(parts[0]),
               let minute = Int(parts[1]) else {
-            print("⚠️ Wrong REMINDER_TIMES format.")
+            app.logger.warning("RemindersScheduler: wrong REMINDER_TIMES format: \(time)")
             return
         }
 
