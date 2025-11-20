@@ -94,7 +94,13 @@ enum BotMenuController {
     ) async {
         await TelegramService.sendMessage(
             app, api: api, chatId: chatId,
-            text: "Привет! Выбирай действие:",
+            text: """
+            Привет! 👋
+            
+            Этот бот поможет тебе легко и быстро отправить слова благодарности своим коллегам. Поделись приятным сообщением, поддержи командный дух и сделай рабочий день своих коллег ярче!
+
+            Выбери действие:
+            """,
             replyMarkup: KeyboardBuilder.mainMenu()
         )
         await sessions.set(chatId, Session(state: .mainMenu, to: nil))
@@ -190,7 +196,7 @@ enum BotMenuController {
                 if let sid = senderEmployeeID, sid == empId {
                     await TelegramService.sendMessage(
                         app, api: api, chatId: chatId,
-                        text: "Нельзя отправить спасибо самому себе 🙂 Выберите коллегу.",
+                        text: "Нельзя отправить спасибо самому себе 🙂 Выбери коллегу.",
                         replyMarkup: KeyboardBuilder.backToEmployeesList()
                     )
                     await sessions.set(chatId, Session(state: .choosingEmployee, to: nil, page: (await sessions.get(chatId))?.page))
@@ -213,7 +219,7 @@ enum BotMenuController {
             }
 
         // MARK: Главное меню → подменю «Спасибо»
-        case (.mainMenu, "Спасибо"):
+        case (.mainMenu, "Передать спасибо"):
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
                 text: "Меню благодарностей:",
@@ -223,7 +229,7 @@ enum BotMenuController {
             return
 
         // MARK: Подменю «Спасибо» — запустить сценарий
-        case (.thanksMenu, "Передать спасибо"):
+        case (.thanksMenu, "Кому из коллег хочешь сказать спасибо?"):
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0)
             return
 
