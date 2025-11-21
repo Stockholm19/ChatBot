@@ -92,19 +92,24 @@ enum BotMenuController {
         chatId: Int64,
         sessions: SessionStore
     ) async {
-        await TelegramService.sendMessage(
-            app, api: api, chatId: chatId,
-            text: """
-            Привет! 👋
-            
-            Этот бот поможет тебе легко и быстро отправить слова благодарности своим коллегам. Поделись приятным сообщением, поддержи командный дух и сделай рабочий день своих коллег ярче!
+            // Игнорируем группы и каналы: бот показывает меню только в личных чатах
+            if chatId <= 0 {
+                return
+            }
 
-            Выбери действие:
-            """,
-            replyMarkup: KeyboardBuilder.mainMenu()
-        )
-        await sessions.set(chatId, Session(state: .mainMenu, to: nil))
-    }
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: """
+                Привет! 👋
+
+                С помощью этого бота ты можешь отправить благодарность коллеге — за поддержку, классные идеи или просто за хорошую работу. А еще здесь можно увидеть, сколько «спасибо» получил лично ты.
+
+                Выбери действие:
+                """,
+                replyMarkup: KeyboardBuilder.mainMenu()
+            )
+            await sessions.set(chatId, Session(state: .mainMenu, to: nil))
+        }
 
     static func handleText(
         app: Application,
@@ -116,6 +121,12 @@ enum BotMenuController {
         sessions: SessionStore,
         db: Database
     ) async {
+        
+        // Игнорируем все сообщения из групп и каналов — бот отвечает только в личке
+        if chatId <= 0 {
+            return
+        }
+        
         let session = await sessions.get(chatId) ?? Session(state: .mainMenu)
         let state = session.state
         let currentTo = session.to
