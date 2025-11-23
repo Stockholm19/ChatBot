@@ -443,6 +443,43 @@ enum BotMenuController {
                 fromEmployeeId: senderEmployeeID
             )
             try? await kudos.save(on: db)
+            
+            // [ФИЧА - Уведомление получателю]
+            // Проверяем, что у получателя есть ID в базе
+            if let rid = recipientId,
+               let recipientEmp = try? await Employee.find(rid, on: db),
+               let recipientTgId = recipientEmp.telegramId {
+                
+                // --- НАЧАЛО ИЗМЕНЕНИЙ: Ищем имя отправителя ---
+                // 1. По умолчанию берем никнейм (на всякий случай)
+                var senderDisplayName = username ?? fromUN
+                
+                // 2. Пробуем найти отправителя в базе по его Telegram ID
+                if let uid = userId,
+                   let senderEmp = try? await Employee.query(on: db)
+                       .filter(\.$telegramId == uid)
+                       .first() {
+                    // Если нашли — подставляем ФИО из базы
+                    senderDisplayName = senderEmp.fullName
+                }
+                // --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
+                let notifyText = """
+                🥳 <b>Тебе прилетело спасибо!</b>
+                
+                От: \(senderDisplayName)
+                Текст: «\(trimmed)»
+                """
+                
+                Task {
+                    await TelegramService.sendMessage(
+                        app,
+                        api: api,
+                        chatId: recipientTgId,
+                        text: notifyText
+                    )
+                }
+            }
 
             // Текст ответа — ФИО, если выбирали из каталога, иначе ник
             var targetText = toUN
