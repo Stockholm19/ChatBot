@@ -23,8 +23,8 @@ struct RemindersScheduler {
         app.logger.info("RemindersScheduler: initialized. times=\(times.joined(separator: ","))")
         
         // Проверка сообщением при запуске Docker контейнера
-         app.logger.info("RemindersScheduler: sending startup reminder once...")
-         service.sendRandomReminder()
+        // app.logger.info("RemindersScheduler: sending startup reminder once...")
+        // service.sendRandomReminder()
 
         for time in times {
             app.logger.info("RemindersScheduler: scheduling reminder for \(time)")
