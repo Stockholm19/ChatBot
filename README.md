@@ -2,15 +2,32 @@
 
 ## Описание проекта
 
-Kudos Bot — корпоративный Telegram-бот, разработанный на Swift (Vapor 4).
-Он помогает сотрудникам компании выражать благодарности коллегам, отслеживать статистику и управлять внутренними активностями.
+Kudos Bot — корпоративный Telegram-бот, разработанный на Swift (Vapor 4), который помогает сотрудникам компании выражать благодарности коллегам и поддерживать позитивную командную культуру.
 
-Проект построен по feature-folder архитектуре, что делает каждую часть системы — (бот-меню, каталог сотрудников, благодарности, экспорт CSV и пр.) — независимым модулем.
-Бот использует PostgreSQL для хранения данных, Docker Compose для контейнеризации и CI/CD GitHub Actions для автоматического деплоя на VPS.
+Бот работает полностью внутри Telegram, без веб-интерфейса, и обеспечивает:
 
----
+- передачу благодарностей через удобное пошаговое меню,
+- автоматические личные уведомления получателю,
+- статистику отправленных и полученных благодарностей,
+- экспорт данных в CSV,
+- строгий контроль доступа по списку сотрудников,
+- автоматические напоминания в рабочие чаты.
+
+### Технологическая основа
+
+- **Backend:** Swift + Vapor 4  
+- **База данных:** PostgreSQL  
+- **Архитектура:** feature-folder (BotMenu, Employees, Kudos, Reminders, Core)  
+- **Контейнеризация:** Docker + Docker Compose  
+- **Продакшен:** VPS (Ubuntu), деплой через Docker  
+- **CI/CD:** GitHub Actions (тесты → сборка Docker-образа → деплой на сервер)  
+- **Тестовая среда:** отдельная тестовая БД (`kudos_test`) + unit/integration тесты  
+
+Проект создан как модульная система, где каждая фича имеет собственный изолированный код, что упрощает поддержку, развитие и добавление новых возможностей.
+
 
 ## Основные возможности
+Kudos Bot предоставляет набор функций, которые делают работу с благодарностями простой и удобной:
 
 - Приветственное меню с кнопками, без необходимости ввода команд вручную.
 - Передача благодарностей коллегам через пошаговый сценарий:
@@ -34,58 +51,63 @@ Kudos Bot — корпоративный Telegram-бот, разработанн
 Ниже приведена структура директорий:
 
 ```
-Sources/
-├── App/
-│   ├── Configuration/              # Настройка приложения и маршрутов
-│   │   ├── Boot.swift              # Инициализация, миграции, сидирование
-│   │   ├── Migrations/             # Миграции БД
-│   │   └── Routes.swift            # Регистрация роутов
-│   │
-│   ├── Core/                       # Базовые сервисы и инфраструктура
-│   │   ├── BotController.swift     # Роутинг апдейтов Telegram
-│   │   ├── TelegramService.swift   # Транспорт: poll, sendMessage, sendDocument
-│   │   ├── SessionStore.swift      # Хранилище состояний диалогов
-│   │   ├── CSVExporter.swift       # Экспорт благодарностей в CSV
-│   │   └── DTO.swift               # Общие DTO и вспомогательные модели
-│   │
-│   ├── Features/                   # Фичи (доменные модули)
-│   │   ├── BotMenu/                # Меню Telegram-бота
-│   │   │   ├── Controllers/
-│   │   │   │   └── BotMenuController.swift
-│   │   │   └── Services/
-│   │   │       └── KeyboardBuilder.swift
-│   │   │
-│   │   ├── Employees/              # Модуль сотрудников
-│   │   │   ├── Import/
-│   │   │   ├── Migrations/
-│   │   │   │   └── CreateEmployees.swift
-│   │   │   ├── Models/
-│   │   │   │   └── Employee.swift
-│   │   │   └── Services/
-│   │   │       └── EmployeesRepo.swift
-│   │   │
-│   │   ├── Kudos/                  # Модуль благодарностей
-│   │   │   └── KudosModel.swift
-│   │   │
-│   │   └── Reminders/              # Модуль напоминаний (автонапоминания о боте в TG группу)
-│   │       ├── RemindersScheduler.swift
-│   │       └── RemindersService.swift
-│   │
-│   └── Run/                        # Точка входа
-│       └── Main.swift
-│
-├── Resources/                      # Файлы сидирования и статические данные
+ChatBot/
+├── exports/                        # Экспортированные CSV-файлы
+├── Resources/                      # Статические данные и сиды
 │   └── SeedData/
 │       ├── employees.csv
 │       └── employees.template.csv
-│
-├── exports/                        # Экспортированные CSV-файлы
-│
-├── Scripts/                       # SQL-скрипты для ручной синхронизации сотрудников
+├── Screenshots/                    # Скриншоты бота
+├── Scripts/                        # SQL-скрипты и утилиты
 │   └── sync_employees.sql
-│
+├── Sources/
+│   ├── App/
+│   │   ├── Configuration/          # Настройка приложения и маршрутов
+│   │   │   ├── Boot.swift          # Инициализация, миграции, сидирование
+│   │   │   ├── Migrations/         # Миграции БД
+│   │   │   └── Routes.swift        # Регистрация роутов
+│   │   │
+│   │   ├── Core/                   # Базовые сервисы и инфраструктура
+│   │   │   ├── BotController.swift
+│   │   │   ├── CSVExporter.swift
+│   │   │   ├── DTO.swift
+│   │   │   ├── SessionStore.swift
+│   │   │   └── TelegramService.swift
+│   │   │
+│   │   ├── Features/               # Фичи (доменные модули)
+│   │   │   ├── BotMenu/            # Меню Telegram-бота
+│   │   │   │   ├── Controllers/
+│   │   │   │   │   └── BotMenuController.swift
+│   │   │   │   └── Services/
+│   │   │   │       └── KeyboardBuilder.swift
+│   │   │   │
+│   │   │   ├── Employees/          # Модуль сотрудников
+│   │   │   │   ├── Import/
+│   │   │   │   ├── Migrations/
+│   │   │   │   │   └── CreateEmployees.swift
+│   │   │   │   ├── Models/
+│   │   │   │   │   └── Employee.swift
+│   │   │   │   └── Services/
+│   │   │   │       └── EmployeesRepo.swift
+│   │   │   │
+│   │   │   ├── Kudos/              # Модуль благодарностей
+│   │   │   │   └── KudosModel.swift
+│   │   │   │
+│   │   │   └── Reminders/          # Модуль напоминаний (автонапоминания о боте)
+│   │   │       ├── RemindersScheduler.swift
+│   │   │       └── RemindersService.swift
+│   │   │
+│   │   └── Run/                    # Точка входа приложения
+│   │       └── Main.swift
+│   │
+│   └── Run/                        # Исполняемая цель SwiftPM (точка входа приложения)
+│       └── Main.swift
+├── Tests/                          # Тесты приложения
+│   └── AppTests/
+│       └── AppTests.swift
 ├── docker-compose.yml
 ├── docker-compose.prod.yml
+├── docker-compose.test.yml
 └── Dockerfile
 ```
 
@@ -160,6 +182,74 @@ Sources/
 - Таблица сотрудников содержит данные из CSV-семпла.
 - Таблица благодарностей хранит информацию с FK-связями на сотрудников.
 - Экспортированные CSV-файлы сохраняются в папке `exports/` на хост-машине (примонтировано как `./exports:/exports`).
+
+---
+
+## Тесты и тестовая среда
+
+В проекте настроены базовые unit- и integration-тесты, которые проверяют:
+
+- Подключение приложения к базе данных и выполнение миграций.
+- Доступность HTTP-эндпоинта `/health` (сервер поднимается и отвечает `200 OK`).
+
+### Структура
+
+Тесты находятся в папке `AppTests`:
+
+```
+Sources/
+└── AppTests/
+    └── AppTests.swift
+```
+
+### Тестовая база данных локально
+
+Для тестов используется отдельная база `kudos_test`, которая поднимается через `docker-compose.test.yml`:
+
+```yaml
+services:
+  db_test:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: kudos_test
+```
+
+Во время локальных тестов приложение запускается в окружении `.testing` и по умолчанию подключается к `postgresql://postgres:postgres@localhost:5433/kudos_test?sslmode=disable`.
+
+Если задана переменная окружения `DATABASE_URL`, она имеет приоритет во всех режимах — это используется в CI.
+
+### Запуск тестов локально
+
+1. Поднять тестовую базу:
+
+   ```bash
+   docker compose -f docker-compose.test.yml up -d
+   ```
+
+2. Запустить тесты:
+
+   ```bash
+   swift test
+   ```
+
+### Тесты в CI/CD (GitHub Actions)
+
+В `.github/workflows/deploy.yml` есть стадия **Run Unit & Integration Tests**:
+
+- Runner: `ubuntu-22.04`.
+- Swift устанавливается через `swift-actions/setup-swift@v1` с версией `5.9`.
+- Поднимается сервис PostgreSQL с базой `kudos_test` на порту `5432`.
+- Тесты запускаются командой `swift test`, при этом в окружении передаётся:
+
+  ```bash
+  DATABASE_URL=postgresql://postgres:postgres@localhost:5432/kudos_test?sslmode=disable
+  ```
+
+Если тесты не проходят, дальнейшие стадии (`build-and-push` и `deploy`) не выполняются, поэтому продакшен остается в прежнем стабильном состоянии.
 
 ---
 
@@ -324,7 +414,7 @@ docker compose exec -it db \
 
 ## Планы развития
 
-- Разработка тестов для повышения качества кода.
+- Расширение покрытия тестами и добавление новых сценариев.
 - Расширение функционала команд бота.
 - Улучшение интерфейса и пользовательского опыта.
 
