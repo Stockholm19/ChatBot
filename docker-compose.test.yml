@@ -1,0 +1,9 @@
+services:
+  db_test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: kudos_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432" # Порт 5433, чтобы не конфликтовать с рабочей базой (5432)

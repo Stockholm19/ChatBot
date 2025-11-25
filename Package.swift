@@ -7,7 +7,6 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
-        // исполняемый продукт (binary) и библиотека для переиспользования
         .executable(name: "Run", targets: ["Run"]),
         .library(name: "App", targets: ["App"])
     ],
@@ -30,9 +29,17 @@ let package = Package(
             name: "Run",
             dependencies: [
                 .target(name: "App"),
-                .product(name: "Vapor", package: "vapor") // для Application/Environment
+                .product(name: "Vapor", package: "vapor")
             ],
             path: "Sources/Run"
+        ),
+        // --- БЛОК ТЕСТОВ ---
+        .testTarget(
+            name: "AppTests",
+            dependencies: [
+                .target(name: "App"),
+                .product(name: "XCTVapor", package: "vapor"), // Библиотека для тестов Vapor
+            ]
         )
     ]
 )

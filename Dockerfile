@@ -7,9 +7,10 @@ COPY Package.swift ./
 COPY Package.resolved ./
 RUN swift package resolve
 
-# копируем исходники И ресурсы в build-стейдж
+# копируем исходники и ресурсы в build-стейдж
 COPY Sources Sources
 COPY Resources Resources
+COPY Tests Tests
 
 RUN swift build -c release --static-swift-stdlib
 

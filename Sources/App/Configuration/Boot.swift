@@ -11,26 +11,41 @@ import FluentPostgresDriver
 
 public func configure(_ app: Application) throws {
     
-    // PostgreSQL через DATABASE_URL
-    let url = Environment.get("DATABASE_URL")
-    ?? "postgresql://postgres:postgres@localhost:5432/kudos?sslmode=disable"
-    try app.databases.use(.postgres(url: url), as: .psql)
+        // Определил URL базы данных
+        let databaseURL: String
 
-    // Регистрация миграций
-    migrations(app)
-
-    // Регистрация маршрутов
-    try routes(app)
-
-    // Автоматическое применение миграций и СИНХРОНИЗАЦИЯ сотрудников при старте
-    Task {
-        do {
-            try await app.autoMigrate()
-            app.logger.info("Starting employees synchronization from CSV...")
-            try await synchronizeEmployees(app: app)
-        } catch {
-            app.logger.critical("Migrate/Sync failed: \(error)")
+        if let envURL = Environment.get("DATABASE_URL") {
+            // Если явно задано DATABASE_URL — используем его во всех окружениях
+            databaseURL = envURL
+        } else if app.environment == .testing {
+            // Дефолт для локального тестового окружения (порт 5433 из docker-compose.test.yml)
+            databaseURL = "postgresql://postgres:postgres@localhost:5433/kudos_test?sslmode=disable"
+        } else {
+            // Дефолт для разработки/прода (порт 5432)
+            databaseURL = "postgresql://postgres:postgres@localhost:5432/kudos?sslmode=disable"
         }
+
+        try app.databases.use(.postgres(url: databaseURL), as: .psql)
+        // --- Конец настройки базы данных ---
+
+        // Регистрация миграций
+        migrations(app)
+
+        // Регистрация маршрутов
+        try routes(app)
+
+        // Автоматическое применение миграций и СИНХРОНИЗАЦИЯ
+        // Запускаем ТОЛЬКО если это не тестирование
+        if app.environment != .testing {
+            Task {
+                do {
+                    try await app.autoMigrate()
+                    app.logger.info("Starting employees synchronization from CSV...")
+                    try await synchronizeEmployees(app: app)
+                } catch {
+                    app.logger.critical("Migrate/Sync failed: \(error)")
+                }
+            }
     }
     
     
@@ -38,8 +53,10 @@ public func configure(_ app: Application) throws {
     app.http.server.configuration.hostname = Environment.get("HOST") ?? "0.0.0.0"
     app.http.server.configuration.port = Environment.get("PORT").flatMap(Int.init) ?? 8080
     
-    // Планировщик напоминаний
-    RemindersScheduler.setup(app: app)
+    // Планировщик напоминаний — отключаем в тестовом окружении
+    if app.environment != .testing {
+        RemindersScheduler.setup(app: app)
+    }
 }
 
 /// Синхронизирует сотрудников из CSV-файла с базой данных.
