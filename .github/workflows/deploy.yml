@@ -37,7 +37,7 @@ jobs:
     - name: Setup Swift
       uses: swift-actions/setup-swift@v1
       with:
-        swift-version: "5.10"
+        swift-version: "5.9"
 
     - name: Run Tests
       # Важно: указываем localhost:5432, так как внутри GitHub Runner база доступна локально
