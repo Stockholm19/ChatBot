@@ -13,7 +13,7 @@ jobs:
   # --- 1. ЭТАП ТЕСТИРОВАНИЯ ---
   test:
     name: Run Unit & Integration Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     services:
       # Поднимаем "одноразовую" базу данных для тестов
       postgres:
