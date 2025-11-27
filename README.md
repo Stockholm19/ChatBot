@@ -104,7 +104,10 @@ ChatBot/
 │       └── Main.swift
 ├── Tests/                          # Тесты приложения
 │   └── AppTests/
-│       └── AppTests.swift
+│       ├── AppTests.swift
+│       ├── EmployeesRepoTests.swift
+│       ├── KeyboardBuilderTests.swift
+│       └── CSVExporterTests.swift
 ├── docker-compose.yml
 ├── docker-compose.prod.yml
 ├── docker-compose.test.yml
@@ -187,19 +190,24 @@ ChatBot/
 
 ## Тесты и тестовая среда
 
-В проекте настроены базовые unit- и integration-тесты, которые проверяют:
+В проекте есть unit- и integration-тесты, которые проверяют:
 
-- Подключение приложения к базе данных и выполнение миграций.
-- Доступность HTTP-эндпоинта `/health` (сервер поднимается и отвечает `200 OK`).
+- запуск приложения и выполнение миграций;
+- работу репозитория сотрудников (поиск, пагинация);
+- построение клавиатуры Telegram-меню (кнопки, разметка, роли);
+- экспорт благодарностей в CSV (формат файла, BOM, разделители и содержимое).
 
 ### Структура
 
-Тесты находятся в папке `AppTests`:
+Тесты находятся в папке `Tests/AppTests`:
 
 ```
-Sources/
+Tests/
 └── AppTests/
-    └── AppTests.swift
+        ├── AppTests.swift               # базовые проверки / healthcheck
+        ├── EmployeesRepoTests.swift     # репозиторий сотрудников
+        ├── KeyboardBuilderTests.swift   # построение клавиатуры бота
+        └── CSVExporterTests.swift       # экспорт благодарностей в CSV
 ```
 
 ### Тестовая база данных локально
