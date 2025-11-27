@@ -9,32 +9,48 @@
 import XCTVapor
 
 final class AppTests: XCTestCase {
-    
-    func testDatabaseConnection() throws {
-        // 1. Создаем приложение в режиме тестирования
-        let app = Application(.testing)
-        defer { app.shutdown() }
-        
-        // 2. Конфигурируем приложение (используется логика из Boot.configure)
-        try configure(app)
-        
-        // 3. Проверяем, что autoMigrate не выбрасывает ошибок подключения
-        XCTAssertNoThrow(try app.autoMigrate().wait())
+    // Общий экземпляр приложения для тестов
+    private var app: Application!
+
+    /// Создает приложение в режиме тестирования (async API)
+    private func makeTestApp() async throws -> Application {
+        let app = try await Application.make(.testing)
+        try configure(app) // конфигурация приложения (Boot.configure)
+        return app
     }
-    
-    func testHealthEndpoint() throws {
-        // 1. Создаем приложение в режиме тестирования
-        let app = Application(.testing)
-        defer { app.shutdown() }
 
-        // 2. Конфигурируем приложение
-        try configure(app)
+    override func setUp() async throws {
+        try await super.setUp()
 
-        // 3. Выполняем миграции (если есть)
-        try app.autoMigrate().wait()
+        // 1. Создаем приложение в режиме тестирования (async API)
+        app = try await makeTestApp()
 
-        // 4. Проверяем, что эндпоинт /health отвечает 200 OK
-        try app.test(.GET, "health") { res in
+        // 2. Выполняем миграции (если есть)
+        try await app.autoMigrate()
+    }
+
+    override func tearDown() async throws {
+        // Аккуратно завершаем работу приложения
+        if app != nil {
+            try await app.asyncShutdown()
+            app = nil
+        }
+
+        try await super.tearDown()
+    }
+
+    func testDatabaseConnection() async throws {
+        // 1. Проверяем, что приложение успешно создано и миграции прошли без ошибок в setUp()
+        XCTAssertNotNil(app)
+
+        // 2. Дополнительно пробуем еще раз выполнить миграции,
+        //    чтобы убедиться, что подключение к БД работает
+        try await app.autoMigrate()
+    }
+
+    func testHealthEndpoint() async throws {
+        // 1. Проверяем, что эндпоинт /health отвечает 200 OK
+        try await app.test(.GET, "health") { res async in
             XCTAssertEqual(res.status, .ok)
         }
     }
