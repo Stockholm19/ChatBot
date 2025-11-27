@@ -27,6 +27,9 @@ final class AppTests: XCTestCase {
 
         // 2. Выполняем миграции (если есть)
         try await app.autoMigrate()
+        
+        // 3. Чистим таблицы, чтобы каждый тест запускался на пустой базе
+        try await Employee.query(on: app.db).delete()
     }
 
     override func tearDown() async throws {
