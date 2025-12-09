@@ -345,7 +345,7 @@ enum BotMenuController {
             }
             return
 
-        case (.adminMenu, "➕ Добавить сотрудника"),
+        case (.adminMenu, "👤 Добавить сотрудника"),
              (.adminMenu, "🚫 Деактивировать сотрудника"),
              (.adminMenu, "📁 Архив сотрудников"):
             await TelegramService.sendMessage(
