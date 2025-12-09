@@ -15,6 +15,7 @@ public enum SessionState: String, Codable {
     case choosingEmployee
     case awaitingRecipient
     case awaitingReason
+    case adminMenu
 }
 
 /// 2. Данные одной сессии (сохраняем состояние и, например, выбранного получателя)

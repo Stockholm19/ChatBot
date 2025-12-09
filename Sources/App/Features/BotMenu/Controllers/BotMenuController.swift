@@ -306,7 +306,16 @@ enum BotMenuController {
             )
             return
 
-        case (.thanksMenu, "Экспорт CSV") where isAdmin(userId: userId, username: username):
+        case (.thanksMenu, "Админка") where isAdmin(userId: userId, username: username):
+            await sessions.set(chatId, Session(state: .adminMenu))
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Раздел администратора:",
+                replyMarkup: KeyboardBuilder.adminMenu()
+            )
+            return
+
+        case (.adminMenu, "📊 Экспорт CSV") where isAdmin(userId: userId, username: username):
 
             // Генерируем уникальное имя файла для каждого запроса
             let uniqueFilename = "kudos_export_\(UUID().uuidString).csv"
@@ -334,6 +343,25 @@ enum BotMenuController {
                 app.logger.error("Failed to export or send CSV: \(error)")
                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Не удалось создать или отправить экспорт. Пожалуйста, проверьте логи.")
             }
+            return
+
+        case (.adminMenu, "➕ Добавить сотрудника"),
+             (.adminMenu, "🚫 Деактивировать сотрудника"),
+             (.adminMenu, "📁 Архив сотрудников"):
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Эта функция еще в разработке 🙂",
+                replyMarkup: KeyboardBuilder.adminMenu()
+            )
+            return
+
+        case (.adminMenu, "← Назад"):
+            await sessions.set(chatId, Session(state: .thanksMenu))
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Меню благодарностей:",
+                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(userId: userId, username: username))
+            )
             return
 
         case (.thanksMenu, "← Назад"):

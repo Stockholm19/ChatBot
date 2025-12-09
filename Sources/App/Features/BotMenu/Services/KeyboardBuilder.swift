@@ -22,10 +22,24 @@ enum KeyboardBuilder {
             [ .init(text: "Количество переданных") ],
             [ .init(text: "Количество полученных") ]
         ]
-        if isAdmin { rows.append([ .init(text: "Экспорт CSV") ]) }
+        if isAdmin { rows.append([ .init(text: "Админка") ]) }
         rows.append([ .init(text: "← Назад") ])
         return TgReplyKeyboard(
             keyboard: rows,
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+    
+    static func adminMenu() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "👤 Добавить сотрудника") ],
+                [ .init(text: "🚫 Деактивировать сотрудника") ],
+                [ .init(text: "📁 Архив сотрудников") ],
+                [ .init(text: "📊 Экспорт CSV") ],
+                [ .init(text: "← Назад") ]
+            ],
             resize_keyboard: true,
             one_time_keyboard: false
         )

@@ -45,15 +45,15 @@ final class KeyboardBuilderTests: XCTestCase {
         XCTAssertEqual(row3, ["← Назад"])
     }
 
-    /// Пользователь админ — появляется дополнительная кнопка «Экспорт CSV»
+    /// Пользователь админ — появляется дополнительная кнопка «Админка»
     func testThanksMenuForAdmin() throws {
         let keyboard = KeyboardBuilder.thanksMenu(isAdmin: true)
 
         // Строки меню
-        // 0: «Кому из коллег хочешь сказать спасибо?»
+        // 0: «Сказать «спасибо»»
         // 1: «Количество переданных»
-        // 2: «Сколько получил»
-        // 3: «Экспорт CSV»
+        // 2: «Количество полученных»
+        // 3: «Админка»
         // 4: «← Назад»
         XCTAssertEqual(keyboard.keyboard.count, 5, "Для админа должно быть 5 строк")
 
@@ -66,7 +66,7 @@ final class KeyboardBuilderTests: XCTestCase {
         XCTAssertEqual(row0, ["Сказать «спасибо»"])
         XCTAssertEqual(row1, ["Количество переданных"])
         XCTAssertEqual(row2, ["Количество полученных"])
-        XCTAssertEqual(row3, ["Экспорт CSV"])
+        XCTAssertEqual(row3, ["Админка"])
         XCTAssertEqual(row4, ["← Назад"])
     }
 
@@ -82,7 +82,7 @@ final class KeyboardBuilderTests: XCTestCase {
         // Ждем строки:
         // 0: «Аня» «Борис»
         // 1: «Вася»
-        // 2: «◀»
+        // 2: «⭠»
         // 3: «← Назад»
         XCTAssertEqual(keyboard.keyboard.count, 4)
 
