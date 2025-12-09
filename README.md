@@ -74,31 +74,29 @@ ChatBot/
 │   │   │   ├── SessionStore.swift
 │   │   │   └── TelegramService.swift
 │   │   │
-│   │   ├── Features/               # Фичи (доменные модули)
-│   │   │   ├── BotMenu/            # Меню Telegram-бота
-│   │   │   │   ├── Controllers/
-│   │   │   │   │   └── BotMenuController.swift
-│   │   │   │   └── Services/
-│   │   │   │       └── KeyboardBuilder.swift
-│   │   │   │
-│   │   │   ├── Employees/          # Модуль сотрудников
-│   │   │   │   ├── Import/
-│   │   │   │   ├── Migrations/
-│   │   │   │   │   └── CreateEmployees.swift
-│   │   │   │   ├── Models/
-│   │   │   │   │   └── Employee.swift
-│   │   │   │   └── Services/
-│   │   │   │       └── EmployeesRepo.swift
-│   │   │   │
-│   │   │   ├── Kudos/              # Модуль благодарностей
-│   │   │   │   └── KudosModel.swift
-│   │   │   │
-│   │   │   └── Reminders/          # Модуль напоминаний (автонапоминания о боте)
-│   │   │       ├── RemindersScheduler.swift
-│   │   │       └── RemindersService.swift
-│   │   │
-│   │   └── Run/                    # Точка входа приложения
-│   │       └── Main.swift
+│   │   └──  Features/               # Фичи (доменные модули)
+│   │       ├── BotMenu/            # Меню Telegram-бота
+│   │       │   ├── Controllers/
+│   │       │   │   └── BotMenuController.swift
+│   │       │   └── Services/
+│   │       │       └── KeyboardBuilder.swift
+│   │       │
+│   │       ├── Employees/          # Модуль сотрудников
+│   │       │   ├── Import/
+│   │       │   ├── Migrations/
+│   │       │   │   └── CreateEmployees.swift
+│   │       │   ├── Models/
+│   │       │   │   └── Employee.swift
+│   │       │   └── Services/
+│   │       │       └── EmployeesRepo.swift
+│   │       │
+│   │       ├── Kudos/              # Модуль благодарностей
+│   │       │   └── KudosModel.swift
+│   │       │
+│   │       └── Reminders/          # Модуль напоминаний (автонапоминания о боте)
+│   │           ├── RemindersScheduler.swift
+│   │           └── RemindersService.swift
+│   │    
 │   │
 │   └── Run/                        # Исполняемая цель SwiftPM (точка входа приложения)
 │       └── Main.swift
