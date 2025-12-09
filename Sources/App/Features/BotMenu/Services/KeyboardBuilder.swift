@@ -18,9 +18,9 @@ enum KeyboardBuilder {
 
     static func thanksMenu(isAdmin: Bool) -> TgReplyKeyboard {
         var rows: [[TgReplyKeyboard.Button]] = [
-            [ .init(text: "Кому из коллег хочешь сказать спасибо?") ],
+            [ .init(text: "Сказать «спасибо»") ],
             [ .init(text: "Количество переданных") ],
-            [ .init(text: "Сколько получил") ]
+            [ .init(text: "Количество полученных") ]
         ]
         if isAdmin { rows.append([ .init(text: "Экспорт CSV") ]) }
         rows.append([ .init(text: "← Назад") ])
@@ -48,8 +48,8 @@ enum KeyboardBuilder {
 
         // Навигация ◀ / ▶ ("чистые" символы без FE0E/FE0F)
         var nav: [TgReplyKeyboard.Button] = []
-        if hasPrev { nav.append(.init(text: "◀")) }
-        if hasNext { nav.append(.init(text: "▶")) }
+        if hasPrev { nav.append(.init(text: "⭠")) }
+        if hasNext { nav.append(.init(text: "⭢")) }
         if !nav.isEmpty { rows.append(nav) }
 
         // Кнопка назад

@@ -39,9 +39,9 @@ final class KeyboardBuilderTests: XCTestCase {
         let row2 = keyboard.keyboard[2].map(\.text)
         let row3 = keyboard.keyboard[3].map(\.text)
 
-        XCTAssertEqual(row0, ["Кому из коллег хочешь сказать спасибо?"])
+        XCTAssertEqual(row0, ["Сказать «спасибо»"])
         XCTAssertEqual(row1, ["Количество переданных"])
-        XCTAssertEqual(row2, ["Сколько получил"])
+        XCTAssertEqual(row2, ["Количество полученных"])
         XCTAssertEqual(row3, ["← Назад"])
     }
 
@@ -63,9 +63,9 @@ final class KeyboardBuilderTests: XCTestCase {
         let row3 = keyboard.keyboard[3].map(\.text)
         let row4 = keyboard.keyboard[4].map(\.text)
 
-        XCTAssertEqual(row0, ["Кому из коллег хочешь сказать спасибо?"])
+        XCTAssertEqual(row0, ["Сказать «спасибо»"])
         XCTAssertEqual(row1, ["Количество переданных"])
-        XCTAssertEqual(row2, ["Сколько получил"])
+        XCTAssertEqual(row2, ["Количество полученных"])
         XCTAssertEqual(row3, ["Экспорт CSV"])
         XCTAssertEqual(row4, ["← Назад"])
     }
@@ -88,11 +88,11 @@ final class KeyboardBuilderTests: XCTestCase {
 
         XCTAssertEqual(keyboard.keyboard[0].map(\.text), ["Аня", "Борис"])
         XCTAssertEqual(keyboard.keyboard[1].map(\.text), ["Вася"])
-        XCTAssertEqual(keyboard.keyboard[2].map(\.text), ["◀"])
+        XCTAssertEqual(keyboard.keyboard[2].map(\.text), ["⭠"])
         XCTAssertEqual(keyboard.keyboard[3].map(\.text), ["← Назад"])
     }
 
-    /// Если нет hasPrev, но есть hasNext — навигационная строка только с «▶»
+    /// Если нет hasPrev, но есть hasNext — навигационная строка только с « ⭢ »
     func testEmployeesPageNextOnly() throws {
         let names = ["Аня", "Борис"]
         let keyboard = KeyboardBuilder.employeesPage(names: names,
@@ -100,11 +100,11 @@ final class KeyboardBuilderTests: XCTestCase {
                                                      hasNext: true)
 
         // 0: «Аня» «Борис»
-        // 1: «▶»
+        // 1: «⭢»
         // 2: «← Назад»
         XCTAssertEqual(keyboard.keyboard.count, 3)
         XCTAssertEqual(keyboard.keyboard[0].map(\.text), ["Аня", "Борис"])
-        XCTAssertEqual(keyboard.keyboard[1].map(\.text), ["▶"])
+        XCTAssertEqual(keyboard.keyboard[1].map(\.text), ["⭢"])
         XCTAssertEqual(keyboard.keyboard[2].map(\.text), ["← Назад"])
     }
 

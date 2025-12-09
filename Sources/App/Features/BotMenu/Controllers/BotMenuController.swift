@@ -157,12 +157,12 @@ enum BotMenuController {
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page)
             return
         // MARK: - Каталог сотрудников: навигация и выбор
-        case (.choosingEmployee, "◀"), (.choosingEmployee, "<"), (.choosingEmployee, "⬅"), (.choosingEmployee, "←"):
+        case (.choosingEmployee, "⭠"), (.choosingEmployee, "<"), (.choosingEmployee, "⬅"), (.choosingEmployee, "←"):
             let page = (await sessions.get(chatId))?.page ?? 0
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1))
             return
 
-        case (.choosingEmployee, "▶"), (.choosingEmployee, ">"), (.choosingEmployee, "➡"), (.choosingEmployee, "→"):
+        case (.choosingEmployee, "⭢"), (.choosingEmployee, ">"), (.choosingEmployee, "➡"), (.choosingEmployee, "→"):
             let page = (await sessions.get(chatId))?.page ?? 0
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
             return
@@ -217,7 +217,7 @@ enum BotMenuController {
                 await sessions.set(chatId, Session(state: .awaitingReason, to: nil, page: nil, chosenEmployeeId: empId))
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
-                    text: "За что благодаришь \(emp.fullName)? Одно сообщение (≥ \(minReasonLength) символов).",
+                    text: "Напиши короткое сообщение, за что «\(emp.fullName)» получит благодарность. 🌟 (от \(minReasonLength) символов)",
                     replyMarkup: KeyboardBuilder.reasonMenu()
                 )
                 return
@@ -240,7 +240,7 @@ enum BotMenuController {
             return
 
         // MARK: Подменю «Спасибо» — запустить сценарий
-        case (.thanksMenu, "Кому из коллег хочешь сказать спасибо?"):
+        case (.thanksMenu, "Сказать «спасибо»"):
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0)
             return
 
@@ -270,13 +270,13 @@ enum BotMenuController {
             }
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "Ты отправил благодарностей: <b>\(total)</b>.",
+                text: "Ты отправил(а) <b>\(total)</b> «спасибо».",
                 replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(userId: userId, username: username))
             )
             return
 
-        case (.thanksMenu, "Сколько получил"):
-            app.logger.info("BotMenu: tapped 'Сколько получил'")
+        case (.thanksMenu, "Количество полученных"):
+            app.logger.info("BotMenu: tapped 'Количество полученных'")
             var total = 0
             if let tg = userId,
                let me = try? await Employee.query(on: db)
@@ -301,7 +301,7 @@ enum BotMenuController {
             }
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "Ты получил благодарностей: <b>\(total)</b>.",
+                text: "Ты получил(а) <b>\(total)</b> «спасибо».",
                 replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(userId: userId, username: username))
             )
             return
@@ -375,7 +375,7 @@ enum BotMenuController {
             await sessions.set(chatId, Session(state: .awaitingReason, to: trimmed))
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "За что благодаришь? Одно сообщение (≥ \(minReasonLength) символов).",
+                text: "Напиши короткое сообщение, за что хочешь сказать «спасибо». 🌟 (от \(minReasonLength) символов)",
                 replyMarkup: KeyboardBuilder.reasonMenu()
             )
             return
@@ -489,7 +489,7 @@ enum BotMenuController {
 
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "Готово! Отправлено \(targetText).",
+                text: "\(targetText) получил(а) твою благодарность 💛",
                 replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(userId: userId, username: username))
             )
             await sessions.set(chatId, Session(state: .thanksMenu, to: nil, page: (await sessions.get(chatId))?.page, chosenEmployeeId: nil))
