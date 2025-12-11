@@ -19,13 +19,25 @@ enum KeyboardBuilder {
     static func thanksMenu(isAdmin: Bool) -> TgReplyKeyboard {
         var rows: [[TgReplyKeyboard.Button]] = [
             [ .init(text: "Сказать «спасибо»") ],
-            [ .init(text: "Количество переданных") ],
-            [ .init(text: "Количество полученных") ]
+            [ .init(text: "Статистика") ]
         ]
         if isAdmin { rows.append([ .init(text: "Админка") ]) }
         rows.append([ .init(text: "← Назад") ])
         return TgReplyKeyboard(
             keyboard: rows,
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+
+    static func statisticsMenu() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "Моя статистика") ],
+                [ .init(text: "Экспорт переданных") ],
+                [ .init(text: "Экспорт полученных") ],
+                [ .init(text: "← Назад") ]
+            ],
             resize_keyboard: true,
             one_time_keyboard: false
         )

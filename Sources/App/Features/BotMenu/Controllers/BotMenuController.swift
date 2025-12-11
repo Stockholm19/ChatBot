@@ -244,66 +244,192 @@ enum BotMenuController {
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0)
             return
 
-        case (.thanksMenu, "Количество переданных"):
-            app.logger.info("BotMenu: tapped 'Количество переданных'")
-            var total = 0
-            if let tg = userId,
-               let me = try? await Employee.query(on: db)
-                   .filter(\.$telegramId == tg)
-                   .first(),
-               let meID = try? me.requireID() {
-                total = (try? await Kudos.query(on: db)
-                    .filter(\.$fromEmployee.$id == meID)
-                    .count()) ?? 0
-            }
-            if total == 0 { // Fallback by normalized username
-                let raw = (username ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                if !raw.isEmpty {
-                    let withAt = raw.hasPrefix("@") ? raw : "@\(raw)"
-                    total = (try? await Kudos.query(on: db)
-                        .group(.or) { or in
-                            or.filter(\.$fromUsername == withAt)
-                            or.filter(\.$fromUsername == raw)
-                        }
-                        .count()) ?? 0
-                }
-            }
+
+        case (.thanksMenu, "Статистика"):
+            await sessions.set(chatId, Session(state: .statisticsMenu))
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "Ты отправил(а) <b>\(total)</b> «спасибо».",
+                text: "Статистика:",
+                replyMarkup: KeyboardBuilder.statisticsMenu()
+            )
+            return
+
+        case (.statisticsMenu, "← Назад"):
+            await sessions.set(chatId, Session(state: .thanksMenu))
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Меню благодарностей:",
                 replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(userId: userId, username: username))
             )
             return
 
-        case (.thanksMenu, "Количество полученных"):
-            app.logger.info("BotMenu: tapped 'Количество полученных'")
-            var total = 0
+        case (.statisticsMenu, "Моя статистика"):
+            var sentTotal = 0
+            var receivedTotal = 0
             if let tg = userId,
                let me = try? await Employee.query(on: db)
                    .filter(\.$telegramId == tg)
                    .first(),
                let meID = try? me.requireID() {
-                total = (try? await Kudos.query(on: db)
+
+                sentTotal = (try? await Kudos.query(on: db)
+                    .filter(\.$fromEmployee.$id == meID)
+                    .count()) ?? 0
+
+                receivedTotal = (try? await Kudos.query(on: db)
                     .filter(\.$employee.$id == meID)
                     .count()) ?? 0
             }
-            if total == 0 { // Fallback by normalized username (toUsername)
+            let msg = "Твоя статистика:\nОтправлено: \(sentTotal)\nПолучено: \(receivedTotal)"
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: msg,
+                replyMarkup: KeyboardBuilder.statisticsMenu()
+            )
+            return
+
+        case (.statisticsMenu, "Экспорт переданных"):
+            app.logger.info("BotMenu: user requested personal export of sent kudos")
+
+            var rows: [Kudos] = []
+
+            // 1. Пробуем найти сотрудника по telegram_id и использовать FK
+            if let tg = userId,
+               let me = try? await Employee.query(on: db)
+                   .filter(\.$telegramId == tg)
+                   .first(),
+               let meID = try? me.requireID() {
+
+                rows = (try? await Kudos.query(on: db)
+                    .filter(\.$fromEmployee.$id == meID)
+                    .sort(\.$ts, .descending)
+                    .all()) ?? []
+            }
+
+            // 2. Fallback по username (на случай отсутствия привязки к сотруднику)
+            if rows.isEmpty {
                 let raw = (username ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 if !raw.isEmpty {
                     let withAt = raw.hasPrefix("@") ? raw : "@\(raw)"
-                    total = (try? await Kudos.query(on: db)
+                    rows = (try? await Kudos.query(on: db)
+                        .group(.or) { or in
+                            or.filter(\.$fromUsername == withAt)
+                            or.filter(\.$fromUsername == raw)
+                        }
+                        .sort(\.$ts, .descending)
+                        .all()) ?? []
+                }
+            }
+
+            if rows.isEmpty {
+                await TelegramService.sendMessage(
+                    app, api: api, chatId: chatId,
+                    text: "У тебя пока нет отправленных «спасибо» для экспорта.",
+                    replyMarkup: KeyboardBuilder.statisticsMenu()
+                )
+                return
+            }
+
+            let uniqueFilename = "kudos_sent_\(UUID().uuidString).csv"
+            let tmpPath = FileManager.default.temporaryDirectory
+                .appendingPathComponent(uniqueFilename).path
+
+            defer {
+                do {
+                    try FileManager.default.removeItem(atPath: tmpPath)
+                    app.logger.info("Cleaned up personal sent CSV: \(tmpPath)")
+                } catch {
+                    app.logger.warning("Failed to clean up personal sent CSV: \(tmpPath). Error: \(error)")
+                }
+            }
+
+            do {
+                try await CSVExporter.exportKudos(db: db, rows: rows, to: tmpPath)
+                try await TelegramService.sendDocument(
+                    app, api: api, chatId: chatId,
+                    filePath: tmpPath,
+                    caption: "Экспорт отправленных благодарностей"
+                )
+            } catch {
+                app.logger.error("Failed to export or send personal sent CSV: \(error)")
+                await TelegramService.sendMessage(
+                    app, api: api, chatId: chatId,
+                    text: "Не получилось создать или отправить экспорт отправленных благодарностей.",
+                    replyMarkup: KeyboardBuilder.statisticsMenu()
+                )
+            }
+            return
+
+        case (.statisticsMenu, "Экспорт полученных"):
+            app.logger.info("BotMenu: user requested personal export of received kudos")
+
+            var rows: [Kudos] = []
+
+            // 1. Пробуем найти сотрудника по telegram_id и использовать FK
+            if let tg = userId,
+               let me = try? await Employee.query(on: db)
+                   .filter(\.$telegramId == tg)
+                   .first(),
+               let meID = try? me.requireID() {
+
+                rows = (try? await Kudos.query(on: db)
+                    .filter(\.$employee.$id == meID)
+                    .sort(\.$ts, .descending)
+                    .all()) ?? []
+            }
+
+            // 2. Fallback по username (на случай отсутствия привязки к сотруднику)
+            if rows.isEmpty {
+                let raw = (username ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if !raw.isEmpty {
+                    let withAt = raw.hasPrefix("@") ? raw : "@\(raw)"
+                    rows = (try? await Kudos.query(on: db)
                         .group(.or) { or in
                             or.filter(\.$toUsername == withAt)
                             or.filter(\.$toUsername == raw)
                         }
-                        .count()) ?? 0
+                        .sort(\.$ts, .descending)
+                        .all()) ?? []
                 }
             }
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Ты получил(а) <b>\(total)</b> «спасибо».",
-                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(userId: userId, username: username))
-            )
+
+            if rows.isEmpty {
+                await TelegramService.sendMessage(
+                    app, api: api, chatId: chatId,
+                    text: "У тебя пока нет полученных «спасибо» для экспорта.",
+                    replyMarkup: KeyboardBuilder.statisticsMenu()
+                )
+                return
+            }
+
+            let uniqueFilename = "kudos_received_\(UUID().uuidString).csv"
+            let tmpPath = FileManager.default.temporaryDirectory
+                .appendingPathComponent(uniqueFilename).path
+
+            defer {
+                do {
+                    try FileManager.default.removeItem(atPath: tmpPath)
+                    app.logger.info("Cleaned up personal received CSV: \(tmpPath)")
+                } catch {
+                    app.logger.warning("Failed to clean up personal received CSV: \(tmpPath). Error: \(error)")
+                }
+            }
+
+            do {
+                try await CSVExporter.exportKudos(db: db, rows: rows, to: tmpPath)
+                try await TelegramService.sendDocument(
+                    app, api: api, chatId: chatId,
+                    filePath: tmpPath,
+                    caption: "Экспорт полученных благодарностей"
+                )
+            } catch {
+                app.logger.error("Failed to export or send personal received CSV: \(error)")
+                await TelegramService.sendMessage(
+                    app, api: api, chatId: chatId,
+                    text: "Не получилось создать или отправить экспорт полученных благодарностей.",
+                    replyMarkup: KeyboardBuilder.statisticsMenu()
+                )
+            }
             return
 
         case (.thanksMenu, "Админка") where isAdmin(userId: userId, username: username):

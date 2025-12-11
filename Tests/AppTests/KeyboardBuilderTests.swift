@@ -23,26 +23,23 @@ final class KeyboardBuilderTests: XCTestCase {
 
     // MARK: - thanksMenu(isAdmin:)
 
-    /// Пользователь НЕ админ — без кнопки «Экспорт CSV»
+    /// Пользователь НЕ админ — без кнопки «Админка»
     func testThanksMenuForRegularUser() throws {
         let keyboard = KeyboardBuilder.thanksMenu(isAdmin: false)
 
         // Строки меню
-        // 0: «Кому из коллег хочешь сказать спасибо?»
-        // 1: «Количество переданных»
-        // 2: «Сколько получил»
-        // 3: «← Назад»
-        XCTAssertEqual(keyboard.keyboard.count, 4, "Для обычного пользователя должно быть 4 строки")
+        // 0: «Сказать «спасибо»»
+        // 1: «📊 Статистика»
+        // 2: «← Назад»
+        XCTAssertEqual(keyboard.keyboard.count, 3, "Для обычного пользователя должно быть 3 строки")
 
         let row0 = keyboard.keyboard[0].map(\.text)
         let row1 = keyboard.keyboard[1].map(\.text)
         let row2 = keyboard.keyboard[2].map(\.text)
-        let row3 = keyboard.keyboard[3].map(\.text)
 
         XCTAssertEqual(row0, ["Сказать «спасибо»"])
-        XCTAssertEqual(row1, ["Количество переданных"])
-        XCTAssertEqual(row2, ["Количество полученных"])
-        XCTAssertEqual(row3, ["← Назад"])
+        XCTAssertEqual(row1, ["Статистика"])
+        XCTAssertEqual(row2, ["← Назад"])
     }
 
     /// Пользователь админ — появляется дополнительная кнопка «Админка»
@@ -51,23 +48,20 @@ final class KeyboardBuilderTests: XCTestCase {
 
         // Строки меню
         // 0: «Сказать «спасибо»»
-        // 1: «Количество переданных»
-        // 2: «Количество полученных»
-        // 3: «Админка»
-        // 4: «← Назад»
-        XCTAssertEqual(keyboard.keyboard.count, 5, "Для админа должно быть 5 строк")
+        // 1: «📊 Статистика»
+        // 2: «Админка»
+        // 3: «← Назад»
+        XCTAssertEqual(keyboard.keyboard.count, 4, "Для админа должно быть 4 строки")
 
         let row0 = keyboard.keyboard[0].map(\.text)
         let row1 = keyboard.keyboard[1].map(\.text)
         let row2 = keyboard.keyboard[2].map(\.text)
         let row3 = keyboard.keyboard[3].map(\.text)
-        let row4 = keyboard.keyboard[4].map(\.text)
 
         XCTAssertEqual(row0, ["Сказать «спасибо»"])
-        XCTAssertEqual(row1, ["Количество переданных"])
-        XCTAssertEqual(row2, ["Количество полученных"])
-        XCTAssertEqual(row3, ["Админка"])
-        XCTAssertEqual(row4, ["← Назад"])
+        XCTAssertEqual(row1, ["Статистика"])
+        XCTAssertEqual(row2, ["Админка"])
+        XCTAssertEqual(row3, ["← Назад"])
     }
 
     // MARK: - employeesPage(names:hasPrev:hasNext:)
@@ -136,5 +130,24 @@ final class KeyboardBuilderTests: XCTestCase {
 
         XCTAssertEqual(keyboard.keyboard.count, 1)
         XCTAssertEqual(keyboard.keyboard[0].map(\.text), ["← Назад к списку"])
+    }
+
+    // MARK: - statisticsMenu()
+
+    /// Меню статистики — три действия + «Назад»
+    func testStatisticsMenuLayout() throws {
+        let keyboard = KeyboardBuilder.statisticsMenu()
+
+        XCTAssertEqual(keyboard.keyboard.count, 4, "В меню статистики ожидаем 4 строки")
+
+        let row0 = keyboard.keyboard[0].map(\.text)
+        let row1 = keyboard.keyboard[1].map(\.text)
+        let row2 = keyboard.keyboard[2].map(\.text)
+        let row3 = keyboard.keyboard[3].map(\.text)
+
+        XCTAssertEqual(row0, ["Моя статистика"])
+        XCTAssertEqual(row1, ["Экспорт переданных"])
+        XCTAssertEqual(row2, ["Экспорт полученных"])
+        XCTAssertEqual(row3, ["← Назад"])
     }
 }

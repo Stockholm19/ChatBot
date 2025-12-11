@@ -192,4 +192,82 @@ final class CSVExporterTests: XCTestCase {
             "Строка данных должна разбиваться по `;` на 5 колонок"
         )
     }
+
+    /// Проверяем, что при передаче кастомного массива `rows`
+    /// экспортирует только указанные записи, а не все Kudos в базе.
+    func testExportKudosWithCustomRowsExportsOnlyGivenRecords() async throws {
+        let now = Date()
+
+        // В базе создаём три записи
+        let kudos1 = Kudos()
+        kudos1.ts = now.addingTimeInterval(-120)
+        kudos1.fromUserId = 3001
+        kudos1.fromUsername = "user1"
+        kudos1.fromName = "User One"
+        kudos1.toUsername = "target"
+        kudos1.reason = "Первая благодарность"
+        try await kudos1.save(on: app.db)
+
+        let kudos2 = Kudos()
+        kudos2.ts = now.addingTimeInterval(-60)
+        kudos2.fromUserId = 3002
+        kudos2.fromUsername = "user2"
+        kudos2.fromName = "User Two"
+        kudos2.toUsername = "target"
+        kudos2.reason = "Вторая благодарность"
+        try await kudos2.save(on: app.db)
+
+        let kudos3 = Kudos()
+        kudos3.ts = now
+        kudos3.fromUserId = 3003
+        kudos3.fromUsername = "user3"
+        kudos3.fromName = "User Three"
+        kudos3.toUsername = "target"
+        kudos3.reason = "Третья благодарность"
+        try await kudos3.save(on: app.db)
+
+        // Но в экспорт передаём только kudos2
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("kudos-export-custom-rows.csv")
+
+        // Удаляем старый файл, если был
+        try? FileManager.default.removeItem(at: url)
+
+        try await CSVExporter.exportKudos(db: app.db, rows: [kudos2], to: url.path)
+
+        let data = try Data(contentsOf: url)
+        let csv: String
+        if data.prefix(3) == Data([0xEF, 0xBB, 0xBF]) {
+            // С BOM
+            csv = String(data: data.dropFirst(3), encoding: .utf8) ?? ""
+        } else {
+            // Без BOM
+            csv = String(data: data, encoding: .utf8) ?? ""
+        }
+
+        let lines = csv
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+
+        // header + 1 строка данных
+        XCTAssertEqual(
+            lines.count,
+            2,
+            "Ожидаем один заголовок и одну строку данных при экспорте только одного Kudos"
+        )
+
+        let csvText = csv
+        XCTAssertTrue(
+            csvText.contains("Вторая благодарность"),
+            "CSV должен содержать только вторую благодарность"
+        )
+        XCTAssertFalse(
+            csvText.contains("Первая благодарность"),
+            "CSV не должен содержать первую благодарность"
+        )
+        XCTAssertFalse(
+            csvText.contains("Третья благодарность"),
+            "CSV не должен содержать третью благодарность"
+        )
+    }
 }

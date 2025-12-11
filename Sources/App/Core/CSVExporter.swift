@@ -13,10 +13,14 @@ import Foundation
 enum CSVExporter {
     
     /// Экспорт всех записей Kudos в CSV-файл по указанному пути
-    static func exportKudos(db: Database, to path: String) async throws {
+    static func exportKudos(db: Database, rows: [Kudos]? = nil, to path: String) async throws {
         
-        // Загружаем все записи Kudos из БД, сортируем по времени
-        let rows = try await Kudos.query(on: db).sort(\.$ts, .descending).all()
+        let rowsToExport: [Kudos]
+        if let provided = rows {
+            rowsToExport = provided
+        } else {
+            rowsToExport = try await Kudos.query(on: db).sort(\.$ts, .descending).all()
+        }
         let delimiter = ";"
 
         // Заголовки CSV
@@ -38,7 +42,7 @@ enum CSVExporter {
         }
 
         // Формируем строки CSV для каждой записи
-        for k in rows {
+        for k in rowsToExport {
             // Определяем человеко-понятные имена отправителя и получателя
             var senderDisplay = k.fromName
             if let fromEmp = try? await k.$fromEmployee.get(on: db), !fromEmp.fullName.isEmpty {

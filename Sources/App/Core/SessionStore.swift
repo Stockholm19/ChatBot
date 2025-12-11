@@ -12,6 +12,7 @@ import Foundation
 public enum SessionState: String, Codable {
     case mainMenu
     case thanksMenu
+    case statisticsMenu
     case choosingEmployee
     case awaitingRecipient
     case awaitingReason
