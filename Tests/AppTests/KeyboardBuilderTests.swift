@@ -48,7 +48,7 @@ final class KeyboardBuilderTests: XCTestCase {
 
         // Строки меню
         // 0: «Сказать «спасибо»»
-        // 1: «📊 Статистика»
+        // 1: «Статистика»
         // 2: «Админка»
         // 3: «← Назад»
         XCTAssertEqual(keyboard.keyboard.count, 4, "Для админа должно быть 4 строки")
@@ -82,7 +82,7 @@ final class KeyboardBuilderTests: XCTestCase {
 
         XCTAssertEqual(keyboard.keyboard[0].map(\.text), ["Аня", "Борис"])
         XCTAssertEqual(keyboard.keyboard[1].map(\.text), ["Вася"])
-        XCTAssertEqual(keyboard.keyboard[2].map(\.text), ["⭠"])
+        XCTAssertEqual(keyboard.keyboard[2].map(\.text), ["<"])
         XCTAssertEqual(keyboard.keyboard[3].map(\.text), ["← Назад"])
     }
 
@@ -98,7 +98,7 @@ final class KeyboardBuilderTests: XCTestCase {
         // 2: «← Назад»
         XCTAssertEqual(keyboard.keyboard.count, 3)
         XCTAssertEqual(keyboard.keyboard[0].map(\.text), ["Аня", "Борис"])
-        XCTAssertEqual(keyboard.keyboard[1].map(\.text), ["⭢"])
+        XCTAssertEqual(keyboard.keyboard[1].map(\.text), [">"])
         XCTAssertEqual(keyboard.keyboard[2].map(\.text), ["← Назад"])
     }
 

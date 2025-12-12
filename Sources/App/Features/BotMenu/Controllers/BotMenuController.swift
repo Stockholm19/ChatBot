@@ -157,12 +157,12 @@ enum BotMenuController {
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page)
             return
         // MARK: - Каталог сотрудников: навигация и выбор
-        case (.choosingEmployee, "⭠"), (.choosingEmployee, "<"), (.choosingEmployee, "⬅"), (.choosingEmployee, "←"):
+        case (.choosingEmployee, "<"), (.choosingEmployee, "⬅"), (.choosingEmployee, "←"), (.choosingEmployee, "⭠"):
             let page = (await sessions.get(chatId))?.page ?? 0
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1))
             return
 
-        case (.choosingEmployee, "⭢"), (.choosingEmployee, ">"), (.choosingEmployee, "➡"), (.choosingEmployee, "→"):
+        case (.choosingEmployee, ">"), (.choosingEmployee, "➡"), (.choosingEmployee, "→"), (.choosingEmployee, "⭢"):
             let page = (await sessions.get(chatId))?.page ?? 0
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
             return
@@ -224,7 +224,7 @@ enum BotMenuController {
             } else {
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
-                    text: "Не нашёл такого сотрудника. Листай ◀/▶ или выбери из списка."
+                    text: "Не нашёл такого сотрудника. Листай </> или выбери из списка."
                 )
                 return
             }

@@ -72,10 +72,10 @@ enum KeyboardBuilder {
             }
         }
 
-        // Навигация ◀ / ▶ ("чистые" символы без FE0E/FE0F)
+        // Навигация < / >
         var nav: [TgReplyKeyboard.Button] = []
-        if hasPrev { nav.append(.init(text: "⭠")) }
-        if hasNext { nav.append(.init(text: "⭢")) }
+        if hasPrev { nav.append(.init(text: "<")) }
+        if hasNext { nav.append(.init(text: ">")) }
         if !nav.isEmpty { rows.append(nav) }
 
         // Кнопка назад
