@@ -51,7 +51,7 @@ public func routes(_ app: Application) throws {
             "env": req.application.environment.name
         ]
 
-        var res = Response(status: dbOK ? .ok : .serviceUnavailable)
+        let res = Response(status: dbOK ? .ok : .serviceUnavailable)
         try res.content.encode(payload, as: .json)
         return res
     }
