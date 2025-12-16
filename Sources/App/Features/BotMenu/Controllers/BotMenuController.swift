@@ -217,7 +217,7 @@ enum BotMenuController {
                 await sessions.set(chatId, Session(state: .awaitingReason, to: nil, page: nil, chosenEmployeeId: empId))
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
-                    text: "Напиши короткое сообщение, за что «\(emp.fullName)» получит благодарность. 🌟 (от \(minReasonLength) символов)",
+                    text: "Напиши короткое сообщение, за что \(emp.fullName) получит благодарность. 🌟 (от \(minReasonLength) символов)",
                     replyMarkup: KeyboardBuilder.reasonMenu()
                 )
                 return
