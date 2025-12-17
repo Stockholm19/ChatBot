@@ -3,21 +3,26 @@ import Vapor
 
 @main
 struct RunApp {
-    static func main() throws {
+    static func main() async throws {
         let env = try Environment.detect()
-        let app = Application(env)
-        defer { app.shutdown() }
+        let app = try await Application.make(env)
 
-        // Конфигурация приложения (БД, миграции, роуты)
-        try configure(app)
+        do {
+            // Конфигурация приложения (БД, миграции, роуты)
+            try configure(app)
 
-        // Общее хранилище сессий для бота
-        let sessions = SessionStore()
+            // Общее хранилище сессий для бота
+            let sessions = SessionStore()
 
-        // Запускаем фоновую задачу для обработки сообщений Telegram
-        Task { await TelegramService.poll(app: app, sessions: sessions) }
+            // Запускаем фоновую задачу для обработки сообщений Telegram
+            Task { await TelegramService.poll(app: app, sessions: sessions) }
 
-        // Запуск HTTP-сервера Vapor
-        try app.run()
+            // Запуск HTTP-сервера Vapor
+            try await app.execute()
+            try await app.asyncShutdown()
+        } catch {
+            try? await app.asyncShutdown()
+            throw error
+        }
     }
 }
