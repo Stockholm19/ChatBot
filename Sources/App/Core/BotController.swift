@@ -61,13 +61,13 @@ enum BotController {
         }
 
         // 2) Передаём остальной текст в BotMenu (подменю, шаги сценариев)
-        await BotMenuController.handleText(
+        await BotMenuController.handleMessage(
             app: app,
             api: api,
             chatId: chatId,
             userId: m.from?.id,
             username: m.from?.username,
-            text: text,
+            message: m,
             sessions: sessions,
             db: app.db
         )

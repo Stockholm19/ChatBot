@@ -120,4 +120,37 @@ enum KeyboardBuilder {
             one_time_keyboard: false
         )
     }
+    
+    // MARK: - Admin Keyboards
+
+    static func back() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "← Назад") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+    
+    static func yesNo() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "Да"), .init(text: "Нет") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true
+        )
+    }
+    
+    static func yesNoCancel() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "Да"), .init(text: "Нет") ],
+                [ .init(text: "Отмена") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true
+        )
+    }
 }

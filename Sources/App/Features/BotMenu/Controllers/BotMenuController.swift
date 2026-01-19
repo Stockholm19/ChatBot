@@ -61,6 +61,47 @@ enum BotMenuController {
         await sessions.set(chatId, Session(state: .choosingEmployee, page: p))
     }
 
+    /// Показывает страницу сотрудников (активных или архивных) для админа
+    private static func showAdminEmployeesPage(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        sessions: SessionStore,
+        db: Database,
+        page: Int,
+        active: Bool,
+        targetState: SessionState
+    ) async {
+        let all = (try? await Employee.query(on: db)
+            .filter(\.$isActive == active)
+            .sort(\.$fullName, .ascending)
+            .all()) ?? []
+        
+        let per = 10
+        let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
+        let p = max(0, min(page, totalPages - 1))
+        let slice = pageSlice(all, page: p, per: per)
+        let names = Array(slice.map { $0.fullName })
+        
+        let title = active ? "Кого деактивировать?" : "Кого вернуть из архива?"
+        
+        await TelegramService.sendMessage(
+            app, api: api, chatId: chatId,
+            text: title,
+            replyMarkup: KeyboardBuilder.employeesPage(
+                names: names,
+                hasPrev: p > 0,
+                hasNext: p < totalPages - 1
+            )
+        )
+        // Сохраняем стейт, но возможно нужно не терять другие поля. 
+        // Но при навигации они обычно не нужны.
+        var session = await sessions.get(chatId) ?? Session()
+        session.state = targetState
+        session.page = p
+        await sessions.set(chatId, session)
+    }
+
     // MARK: - Roles
 
     /// Проверка прав администратора: поддерживает и ADMIN_IDS (числовые Telegram ID),
@@ -111,16 +152,17 @@ enum BotMenuController {
             await sessions.set(chatId, Session(state: .mainMenu, to: nil))
         }
 
-    static func handleText(
+    static func handleMessage(
         app: Application,
         api: String,
         chatId: Int64,
         userId: Int64?,
         username: String?,
-        text: String,
+        message: TgMessage,
         sessions: SessionStore,
         db: Database
     ) async {
+        let text = (message.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         
         // Игнорируем все сообщения из групп и каналов — бот отвечает только в личке
         if chatId <= 0 {
@@ -132,10 +174,13 @@ enum BotMenuController {
         let currentTo = session.to
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let t = trimmed.normalizedNav
+        
+        let isUserAdmin = isAdmin(userId: userId, username: username)
+        app.logger.info("BotMenu: state=\(state), text='\(t)', isAdmin=\(isUserAdmin)")
 
         // Debug: /whoami — показывает распознанный userId/username и env (только для админов)
         if trimmed == "/whoami" {
-            guard isAdmin(userId: userId, username: username) else {
+            guard isUserAdmin else {
                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Команда недоступна.")
                 return
             }
@@ -471,14 +516,50 @@ enum BotMenuController {
             }
             return
 
-        case (.adminMenu, "👤 Добавить сотрудника"),
-             (.adminMenu, "🚫 Деактивировать сотрудника"),
-             (.adminMenu, "📁 Архив сотрудников"):
+        case (_, let cmd) where cmd.contains("Добавить сотрудника") && isAdmin(userId: userId, username: username):
+            await sessions.set(chatId, Session(state: .adminAddAskName))
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "Эта функция еще в разработке 🙂",
-                replyMarkup: KeyboardBuilder.adminMenu()
+                text: "Введи Фамилию и Имя (например: Иванов Иван)",
+                replyMarkup: KeyboardBuilder.back()
             )
+            return
+            
+        case (_, let cmd) where cmd.contains("Деактивировать сотрудника") && isAdmin(userId: userId, username: username):
+            await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0, active: true, targetState: .adminDeactivateChoose)
+            return
+            
+        case (_, let cmd) where cmd.contains("Архив сотрудников") && isAdmin(userId: userId, username: username):
+            await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0, active: false, targetState: .adminArchiveChoose)
+            return
+            
+        case (_, let cmd) where cmd.contains("Экспорт CSV") && isAdmin(userId: userId, username: username):
+            // Генерируем уникальное имя файла для каждого запроса
+            let uniqueFilename = "kudos_export_\(UUID().uuidString).csv"
+            let tmpPath = FileManager.default.temporaryDirectory
+                .appendingPathComponent(uniqueFilename).path
+
+            // Используем 'defer' для гарантированной очистки файла после использования
+            defer {
+                do {
+                    try FileManager.default.removeItem(atPath: tmpPath)
+                    app.logger.info("Successfully cleaned up temporary file: \(tmpPath)")
+                } catch {
+                    app.logger.warning("Failed to clean up temporary file: \(tmpPath). Error: \(error)")
+                }
+            }
+            
+            do {
+                try await CSVExporter.exportKudos(db: db, to: tmpPath)
+                try await TelegramService.sendDocument(
+                    app, api: api, chatId: chatId,
+                    filePath: tmpPath,
+                    caption: "Экспорт благодарностей"
+                )
+            } catch {
+                app.logger.error("Failed to export or send CSV: \(error)")
+                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Не удалось создать или отправить экспорт. Пожалуйста, проверьте логи.")
+            }
             return
 
         case (.adminMenu, "← Назад"):
@@ -489,6 +570,224 @@ enum BotMenuController {
                 replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isAdmin(userId: userId, username: username))
             )
             return
+
+        // MARK: - Admin Flow: Add Employee
+        
+        case (.adminAddAskName, "← Назад"):
+             await sessions.set(chatId, Session(state: .adminMenu))
+             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Раздел администратора:", replyMarkup: KeyboardBuilder.adminMenu())
+             return
+
+        case (.adminAddAskName, _):
+             // Save draft name
+             var session = await sessions.get(chatId) ?? Session()
+             session.draftFullName = trimmed
+             session.state = .adminAddConfirmName
+             await sessions.set(chatId, session)
+             
+             await TelegramService.sendMessage(
+                 app, api: api, chatId: chatId,
+                 text: "Новый сотрудник: \(trimmed). Все верно?",
+                 replyMarkup: KeyboardBuilder.yesNo()
+             )
+             return
+
+        case (.adminAddConfirmName, "Нет"):
+             // Clear draft and ask again
+             var session = await sessions.get(chatId) ?? Session()
+             session.draftFullName = nil
+             session.state = .adminAddAskName
+             await sessions.set(chatId, session)
+             
+             await TelegramService.sendMessage(
+                 app, api: api, chatId: chatId,
+                 text: "Введи Фамилию и Имя (например: Иванов Иван)",
+                 replyMarkup: KeyboardBuilder.back()
+             )
+             return
+
+        case (.adminAddConfirmName, "Да"):
+             // Next step: ask forward
+             var session = await sessions.get(chatId) ?? Session()
+             session.state = .adminAddAskForward
+             await sessions.set(chatId, session)
+             
+             await TelegramService.sendMessage(
+                 app, api: api, chatId: chatId,
+                 text: "Перешли любое сообщение от сотрудника, чтобы я мог узнать его Telegram ID.",
+                 replyMarkup: KeyboardBuilder.back()
+             )
+             return
+        
+        case (.adminAddAskForward, "← Назад"):
+             // Back to start of add flow
+             await sessions.set(chatId, Session(state: .adminAddAskName))
+             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Введи Фамилию и Имя", replyMarkup: KeyboardBuilder.back())
+             return
+
+        case (.adminAddAskForward, _):
+             // Check forward
+             guard let fwd = message.forward_from else {
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Это не пересланное сообщение или профиль скрыт. Попробуй переслать другое сообщение (не от бота, а от человека).")
+                 return
+             }
+             
+             let tgId = fwd.id
+             let tgName = [fwd.first_name, fwd.last_name].compactMap { $0 }.joined(separator: " ")
+             let username = fwd.username.map { "@\($0)" } ?? "нет логина"
+             
+             // Check if already exists? (Optional but good)
+             
+             var session = await sessions.get(chatId) ?? Session()
+             session.draftTelegramId = tgId
+             session.state = .adminAddConfirmAccount
+             await sessions.set(chatId, session)
+             
+             let draftName = session.draftFullName ?? "???"
+             let msg = """
+             Привязываем сотрудника: \(draftName)
+             к Telegram-аккаунту: \(username)
+             Имя в Telegram: \(tgName)
+             ID: \(tgId)
+             
+             Все верно?
+             """
+             
+             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: msg, replyMarkup: KeyboardBuilder.yesNoCancel())
+             return
+
+        case (.adminAddConfirmAccount, "Нет"):
+             // Back to forward
+             var session = await sessions.get(chatId) ?? Session()
+             session.state = .adminAddAskForward
+             await sessions.set(chatId, session)
+             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Перешли другое сообщение.", replyMarkup: KeyboardBuilder.back())
+             return
+             
+        case (.adminAddConfirmAccount, "Отмена"):
+              await sessions.set(chatId, Session(state: .adminMenu))
+              await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Отменено.", replyMarkup: KeyboardBuilder.adminMenu())
+              return
+
+        case (.adminAddConfirmAccount, "Да"):
+              // Create
+              let session = await sessions.get(chatId)
+              let name = session?.draftFullName ?? "Unknown"
+              let tgId = session?.draftTelegramId
+              
+              let newEmp = Employee(fullName: name, isActive: true)
+              newEmp.telegramId = tgId
+              
+              do {
+                  try await newEmp.save(on: db)
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник \(name) добавлен! ✅", replyMarkup: KeyboardBuilder.adminMenu())
+              } catch {
+                  app.logger.error("Failed to add employee: \(error)")
+                   await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка при сохранении: \(error.localizedDescription)", replyMarkup: KeyboardBuilder.adminMenu())
+              }
+              await sessions.set(chatId, Session(state: .adminMenu))
+              return
+
+
+        // MARK: - Admin Flow: Deactivate
+
+        case (.adminDeactivateChoose, "<"), (.adminDeactivateChoose, "⬅"), (.adminDeactivateChoose, "←"), (.adminDeactivateChoose, "⭠"):
+            let page = (await sessions.get(chatId))?.page ?? 0
+            await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1), active: true, targetState: .adminDeactivateChoose)
+            return
+
+        case (.adminDeactivateChoose, ">"), (.adminDeactivateChoose, "➡"), (.adminDeactivateChoose, "→"), (.adminDeactivateChoose, "⭢"):
+            let page = (await sessions.get(chatId))?.page ?? 0
+            await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1, active: true, targetState: .adminDeactivateChoose)
+            return
+            
+        case (.adminDeactivateChoose, "← Назад"):
+             await sessions.set(chatId, Session(state: .adminMenu))
+             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
+             return
+
+        case (.adminDeactivateChoose, _):
+             // Chosen employee
+             if let emp = try? await Employee.query(on: db).filter(\.$fullName == trimmed).filter(\.$isActive == true).first(),
+                let eid = try? emp.requireID() {
+                 
+                 var sess = await sessions.get(chatId) ?? Session()
+                 sess.selectedEmployeeId = eid
+                 sess.state = .adminDeactivateConfirm
+                 await sessions.set(chatId, sess)
+                 
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Деактивировать \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
+             } else {
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден.")
+             }
+             return
+
+        case (.adminDeactivateConfirm, "Нет"):
+             await sessions.set(chatId, Session(state: .adminMenu))
+             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Отменено.", replyMarkup: KeyboardBuilder.adminMenu())
+             return
+
+        case (.adminDeactivateConfirm, "Да"):
+             let eid = (await sessions.get(chatId))?.selectedEmployeeId
+             if let eid = eid, let emp = try? await Employee.find(eid, on: db) {
+                 emp.isActive = false
+                 try? await emp.save(on: db)
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник перенесен в архив.", replyMarkup: KeyboardBuilder.adminMenu())
+             } else {
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: сотрудник не найден.", replyMarkup: KeyboardBuilder.adminMenu())
+             }
+             await sessions.set(chatId, Session(state: .adminMenu))
+             return
+
+        // MARK: - Admin Flow: RESTORE (Archive)
+        
+        case (.adminArchiveChoose, "<"), (.adminArchiveChoose, "⬅"), (.adminArchiveChoose, "←"), (.adminArchiveChoose, "⭠"):
+            let page = (await sessions.get(chatId))?.page ?? 0
+            await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1), active: false, targetState: .adminArchiveChoose)
+            return
+
+        case (.adminArchiveChoose, ">"), (.adminArchiveChoose, "➡"), (.adminArchiveChoose, "→"), (.adminArchiveChoose, "⭢"):
+            let page = (await sessions.get(chatId))?.page ?? 0
+            await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1, active: false, targetState: .adminArchiveChoose)
+            return
+            
+        case (.adminArchiveChoose, "← Назад"):
+             await sessions.set(chatId, Session(state: .adminMenu))
+             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
+             return
+
+        case (.adminArchiveChoose, _):
+             // Chosen employee
+             if let emp = try? await Employee.query(on: db).filter(\.$fullName == trimmed).filter(\.$isActive == false).first(),
+                let eid = try? emp.requireID() {
+                 
+                 var sess = await sessions.get(chatId) ?? Session()
+                 sess.selectedEmployeeId = eid
+                 sess.state = .adminArchiveConfirm
+                 await sessions.set(chatId, sess)
+                 
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Вернуть сотрудника \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
+             } else {
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден.")
+             }
+             return
+             
+        case (.adminArchiveConfirm, "Нет"):
+             await sessions.set(chatId, Session(state: .adminMenu))
+             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Отменено.", replyMarkup: KeyboardBuilder.adminMenu())
+             return
+
+        case (.adminArchiveConfirm, "Да"):
+             let eid = (await sessions.get(chatId))?.selectedEmployeeId
+             if let eid = eid, let emp = try? await Employee.find(eid, on: db) {
+                 emp.isActive = true
+                 try? await emp.save(on: db)
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник снова активен.", replyMarkup: KeyboardBuilder.adminMenu())
+             } else {
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: сотрудник не найден.", replyMarkup: KeyboardBuilder.adminMenu())
+             }
+             await sessions.set(chatId, Session(state: .adminMenu))
+             return
 
         case (.thanksMenu, "← Назад"):
             await TelegramService.sendMessage(
