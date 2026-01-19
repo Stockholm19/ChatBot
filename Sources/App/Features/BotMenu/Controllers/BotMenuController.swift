@@ -241,25 +241,27 @@ enum BotMenuController {
                 .first(),
                let empId = try? emp.requireID() {
                 
-                // запрет "самому себе" на этапе выбора
-                var senderEmployeeID: UUID? = nil
-                if let tg = userId {
-                    senderEmployeeID = try? await Employee.query(on: db)
-                        .filter(\.$telegramId == tg)
-                        .first()?
-                        .requireID()
-                }
-                if let sid = senderEmployeeID, sid == empId {
-                    await TelegramService.sendMessage(
-                        app, api: api, chatId: chatId,
-                        text: "Нельзя отправить спасибо самому себе 🙂 Выбери коллегу.",
-                        replyMarkup: KeyboardBuilder.backToEmployeesList()
-                    )
-                    await sessions.set(chatId, Session(state: .choosingEmployee, to: nil, page: (await sessions.get(chatId))?.page))
-                    app.logger.info("self_kudos_blocked ui tg:\(userId.map(String.init) ?? "nil")")
-                    return
-                }
-                await sessions.set(chatId, Session(state: .awaitingReason, to: nil, page: nil, chosenEmployeeId: empId))
+                 // запрет "самому себе" на этапе выбора
+                 var senderEmployeeID: UUID? = nil
+                 if let tg = userId {
+                     senderEmployeeID = try? await Employee.query(on: db)
+                         .filter(\.$telegramId == tg)
+                         .first()?
+                         .requireID()
+                 }
+                 if let sid = senderEmployeeID, sid == empId {
+                     await TelegramService.sendMessage(
+                         app, api: api, chatId: chatId,
+                         text: "Нельзя отправить спасибо самому себе 🙂 Выбери коллегу.",
+                         replyMarkup: KeyboardBuilder.backToEmployeesList()
+                     )
+                     await sessions.set(chatId, Session(state: .choosingEmployee, to: nil, page: (await sessions.get(chatId))?.page))
+                     app.logger.info("self_kudos_blocked ui tg:\(userId.map(String.init) ?? "nil")")
+                     return
+                 }
+                 // Preserve the current page when transitioning to awaitingReason
+                 let currentPage = (await sessions.get(chatId))?.page
+                 await sessions.set(chatId, Session(state: .awaitingReason, to: nil, page: currentPage, chosenEmployeeId: empId))
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
                     text: "Напиши короткое сообщение, за что \(emp.fullName) получит благодарность. 🌟 (от \(minReasonLength) символов)",
@@ -533,34 +535,7 @@ enum BotMenuController {
             await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0, active: false, targetState: .adminArchiveChoose)
             return
             
-        case (_, let cmd) where cmd.contains("Экспорт CSV") && isAdmin(userId: userId, username: username):
-            // Генерируем уникальное имя файла для каждого запроса
-            let uniqueFilename = "kudos_export_\(UUID().uuidString).csv"
-            let tmpPath = FileManager.default.temporaryDirectory
-                .appendingPathComponent(uniqueFilename).path
 
-            // Используем 'defer' для гарантированной очистки файла после использования
-            defer {
-                do {
-                    try FileManager.default.removeItem(atPath: tmpPath)
-                    app.logger.info("Successfully cleaned up temporary file: \(tmpPath)")
-                } catch {
-                    app.logger.warning("Failed to clean up temporary file: \(tmpPath). Error: \(error)")
-                }
-            }
-            
-            do {
-                try await CSVExporter.exportKudos(db: db, to: tmpPath)
-                try await TelegramService.sendDocument(
-                    app, api: api, chatId: chatId,
-                    filePath: tmpPath,
-                    caption: "Экспорт благодарностей"
-                )
-            } catch {
-                app.logger.error("Failed to export or send CSV: \(error)")
-                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Не удалось создать или отправить экспорт. Пожалуйста, проверьте логи.")
-            }
-            return
 
         case (.adminMenu, "← Назад"):
             await sessions.set(chatId, Session(state: .thanksMenu))
@@ -669,24 +644,43 @@ enum BotMenuController {
               await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Отменено.", replyMarkup: KeyboardBuilder.adminMenu())
               return
 
-        case (.adminAddConfirmAccount, "Да"):
-              // Create
-              let session = await sessions.get(chatId)
-              let name = session?.draftFullName ?? "Unknown"
-              let tgId = session?.draftTelegramId
-              
-              let newEmp = Employee(fullName: name, isActive: true)
-              newEmp.telegramId = tgId
-              
-              do {
-                  try await newEmp.save(on: db)
-                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник \(name) добавлен! ✅", replyMarkup: KeyboardBuilder.adminMenu())
-              } catch {
-                  app.logger.error("Failed to add employee: \(error)")
-                   await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка при сохранении: \(error.localizedDescription)", replyMarkup: KeyboardBuilder.adminMenu())
-              }
-              await sessions.set(chatId, Session(state: .adminMenu))
-              return
+         case (.adminAddConfirmAccount, "Да"):
+                // Validate telegramId and fullName before creating employee
+                guard let session = await sessions.get(chatId),
+                      let tgId = session.draftTelegramId,
+                      let rawName = session.draftFullName else {
+                    await TelegramService.sendMessage(
+                        app, api: api, chatId: chatId,
+                        text: "Ошибка: не удалось получить имя или Telegram ID. Начни добавление заново.",
+                        replyMarkup: KeyboardBuilder.adminMenu()
+                    )
+                    await sessions.set(chatId, Session(state: .adminMenu))
+                    return
+                }
+                 
+                let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else {
+                    await TelegramService.sendMessage(
+                        app, api: api, chatId: chatId,
+                        text: "Ошибка: имя пустое. Введи Фамилию и Имя.",
+                        replyMarkup: KeyboardBuilder.adminMenu()
+                    )
+                    await sessions.set(chatId, Session(state: .adminMenu))
+                    return
+                }
+                 
+                let newEmp = Employee(fullName: name, isActive: true)
+                newEmp.telegramId = tgId
+                 
+                do {
+                    try await newEmp.save(on: db)
+                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник \(name) добавлен! ✅", replyMarkup: KeyboardBuilder.adminMenu())
+                } catch {
+                    app.logger.error("Failed to add employee: \(error)")
+                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка при сохранении: \(error.localizedDescription)", replyMarkup: KeyboardBuilder.adminMenu())
+                }
+                await sessions.set(chatId, Session(state: .adminMenu))
+                return
 
 
         // MARK: - Admin Flow: Deactivate
