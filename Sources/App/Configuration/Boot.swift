@@ -53,9 +53,10 @@ public func configure(_ app: Application) throws {
     app.http.server.configuration.hostname = Environment.get("HOST") ?? "0.0.0.0"
     app.http.server.configuration.port = Environment.get("PORT").flatMap(Int.init) ?? 8080
     
-    // Планировщик напоминаний — отключаем в тестовом окружении
+    // Планировщики — отключаем в тестовом окружении
     if app.environment != .testing {
         RemindersScheduler.setup(app: app)
+        PendingLinksScheduler.setup(app: app)
     }
 }
 

@@ -31,6 +31,9 @@ public enum SessionState: String, Codable {
     // Admin: Archive
     case adminArchiveChoose
     case adminArchiveConfirm
+    
+    // Admin: Link Telegram
+    case adminLinkChoose
 }
 
 /// 2. Данные одной сессии (сохраняем состояние и, например, выбранного получателя)

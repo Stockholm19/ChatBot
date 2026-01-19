@@ -159,11 +159,72 @@ enum BotMenuController {
          )
          // Сохраняем стейт, но возможно нужно не терять другие поля.
          // Но при навигации они обычно не нужны.
-         var session = await sessions.get(chatId) ?? Session()
-         session.state = targetState
-         session.page = p
-         await sessions.set(chatId, session)
-     }
+          var session = await sessions.get(chatId) ?? Session()
+          session.state = targetState
+          session.page = p
+          await sessions.set(chatId, session)
+      }
+
+      /// Показывает страницу сотрудников без telegramId для админа (для повторной привязки)
+      private static func showAdminLinkEmployeesPage(
+          app: Application,
+          api: String,
+          chatId: Int64,
+          sessions: SessionStore,
+          db: Database,
+          page: Int
+      ) async {
+          let all = (try? await Employee.query(on: db)
+              .filter(\.$isActive == true)
+              .filter(\.$telegramId == nil)
+              .sort(\.$fullName, .ascending)
+              .all()) ?? []
+          
+          let per = 10
+          let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
+          let p = max(0, min(page, totalPages - 1))
+          let slice = pageSlice(all, page: p, per: per)
+
+          var titleById: [UUID: String] = [:]
+          let groups = Dictionary(grouping: all, by: { $0.fullName })
+          for (name, emps) in groups {
+              if emps.count == 1, let id = try? emps[0].requireID() {
+                  titleById[id] = name
+              } else {
+                  let sorted = emps.sorted { a, b in
+                      let aId = (try? a.requireID())?.uuidString ?? ""
+                      let bId = (try? b.requireID())?.uuidString ?? ""
+                      return aId < bId
+                  }
+                  for (i, emp) in sorted.enumerated() {
+                      if let id = try? emp.requireID() {
+                          titleById[id] = "\(name) (\(i + 1))"
+                      }
+                  }
+              }
+          }
+
+          let titles = Array(slice.map { emp -> String in
+              guard let id = try? emp.requireID() else { return emp.fullName }
+              return titleById[id] ?? emp.fullName
+          })
+          
+          await TelegramService.sendMessage(
+              app, api: api, chatId: chatId,
+              text: "Выбери сотрудника для привязки Telegram:",
+              replyMarkup: KeyboardBuilder.employeesPage(
+                  names: titles,
+                  hasPrev: p > 0,
+                  hasNext: p < totalPages - 1
+              )
+          )
+          
+          var session = await sessions.get(chatId) ?? Session()
+          session.state = .adminLinkChoose
+          session.page = p
+          await sessions.set(chatId, session)
+      }
+
 
     // MARK: - Roles
 
@@ -631,6 +692,10 @@ enum BotMenuController {
                 replyMarkup: KeyboardBuilder.back()
             )
             return
+
+        case (_, let cmd) where cmd.contains("Привязка Telegram") && isAdmin(userId: userId, username: username):
+            await showAdminLinkEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0)
+            return
             
         case (_, let cmd) where cmd.contains("Деактивировать сотрудника") && isAdmin(userId: userId, username: username):
             await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0, active: true, targetState: .adminDeactivateChoose)
@@ -686,18 +751,23 @@ enum BotMenuController {
              )
              return
 
-        case (.adminAddConfirmName, "Да"):
-             // Next step: ask forward
-             var session = await sessions.get(chatId) ?? Session()
-             session.state = .adminAddAskForward
-             await sessions.set(chatId, session)
-             
-             await TelegramService.sendMessage(
-                 app, api: api, chatId: chatId,
-                 text: "Перешли любое сообщение от сотрудника, чтобы я мог узнать его Telegram ID.",
-                 replyMarkup: KeyboardBuilder.back()
-             )
-             return
+         case (.adminAddConfirmName, "Да"):
+              // Next step: ask forward
+              var session = await sessions.get(chatId) ?? Session()
+              session.state = .adminAddAskForward
+              await sessions.set(chatId, session)
+              
+              await TelegramService.sendMessage(
+                  app, api: api, chatId: chatId,
+                  text: """
+                  Перешли любое сообщение от сотрудника, чтобы я мог узнать его Telegram ID.
+                  
+                  <i>Если у сотрудника скрыт профиль, нажми кнопку ниже для привязки через код.</i>
+                  """,
+                  replyMarkup: KeyboardBuilder.adminAddForwardMenu()
+              )
+              return
+
         
         case (.adminAddAskForward, "← Назад"):
              // Back to start of add flow
@@ -705,10 +775,89 @@ enum BotMenuController {
              await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Введи Фамилию и Имя", replyMarkup: KeyboardBuilder.back())
              return
 
+        case (.adminAddAskForward, "🔗 Привязать через код"):
+             guard let session = await sessions.get(chatId), let draftName = session.draftFullName else {
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: сессия потеряна. Начни заново.", replyMarkup: KeyboardBuilder.adminMenu())
+                 await sessions.set(chatId, Session(state: .adminMenu))
+                 return
+             }
+
+             // Создаем сотрудника или переиспользуем уже созданного (если админ нажал кнопку повторно)
+             let name = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+             guard !name.isEmpty else {
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: имя пустое. Начни заново.", replyMarkup: KeyboardBuilder.adminMenu())
+                 await sessions.set(chatId, Session(state: .adminMenu))
+                 return
+             }
+
+             do {
+                 // Пытаемся найти уже созданного активного сотрудника без привязки Telegram
+                 let existing = try await Employee.query(on: db)
+                     .filter(\.$isActive == true)
+                     .filter(\.$fullName == name)
+                     .filter(\.$telegramId == nil)
+                     .sort(\.$id, .ascending)
+                     .first()
+
+                 let emp: Employee
+                 if let existing {
+                     emp = existing
+                 } else {
+                     let newEmp = Employee(fullName: name, isActive: true)
+                     try await newEmp.save(on: db)
+                     emp = newEmp
+                 }
+
+                 let empId = try emp.requireID()
+
+                 // Генерируем уникальный код (до 5 попыток)
+                 var code = ""
+                 var success = false
+                 for _ in 1...5 {
+                     let randomCode = String(Int.random(in: 100000...999999))
+                     let existing = try await PendingLink.query(on: db).filter(\.$code == randomCode).first()
+                     if existing == nil {
+                         code = randomCode
+                         success = true
+                         break
+                     }
+                 }
+
+                 guard success else {
+                     await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Не удалось сгенерировать уникальный код. Попробуй нажать кнопку еще раз.", replyMarkup: KeyboardBuilder.adminAddForwardMenu())
+                     return
+                 }
+
+                 let expiresAt = Date().addingTimeInterval(15 * 60)
+                 let pending = PendingLink(code: code, employeeId: empId, createdByAdminTgId: userId, expiresAt: expiresAt)
+                 try await pending.save(on: db)
+
+                 let msg = """
+                 Сотрудник <b>\(name)</b> создан! ✅
+
+                 Код привязки: <code>\(code)</code>
+
+                 Инструкция для сотрудника:
+                 1. Зайти в этот бот
+                 2. Написать команду: <code>/link \(code)</code>
+
+                 Код действует 15 минут.
+                 """
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: msg, replyMarkup: KeyboardBuilder.adminMenu())
+                 await sessions.set(chatId, Session(state: .adminMenu))
+
+                 app.logger.info("pending_created: adminId=\(userId ?? 0), employeeId=\(empId), code=\(code)")
+             } catch {
+                 app.logger.error("Failed to create pending link: \(error)")
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: \(error.localizedDescription)", replyMarkup: KeyboardBuilder.adminMenu())
+                 await sessions.set(chatId, Session(state: .adminMenu))
+             }
+             return
+
         case (.adminAddAskForward, _):
              // Check forward
              guard let fwd = message.forward_from else {
-                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Это не пересланное сообщение или профиль скрыт. Попробуй переслать другое сообщение (не от бота, а от человека).")
+                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Это не пересланное сообщение или профиль скрыт. Попробуй переслать другое сообщение (не от бота, а от человека).", replyMarkup: KeyboardBuilder.adminAddForwardMenu())
                  return
              }
              
@@ -741,7 +890,7 @@ enum BotMenuController {
              var session = await sessions.get(chatId) ?? Session()
              session.state = .adminAddAskForward
              await sessions.set(chatId, session)
-             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Перешли другое сообщение.", replyMarkup: KeyboardBuilder.back())
+             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Перешли другое сообщение.", replyMarkup: KeyboardBuilder.adminAddForwardMenu())
              return
              
         case (.adminAddConfirmAccount, "Отмена"):
@@ -927,6 +1076,98 @@ enum BotMenuController {
              }
              await sessions.set(chatId, Session(state: .adminMenu))
              return
+
+        // MARK: - Admin Flow: Link Telegram (Regenerate Code)
+        
+        case (.adminLinkChoose, "<"), (.adminLinkChoose, "⬅"), (.adminLinkChoose, "←"), (.adminLinkChoose, "⭠"):
+            let page = (await sessions.get(chatId))?.page ?? 0
+            await showAdminLinkEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1))
+            return
+
+        case (.adminLinkChoose, ">"), (.adminLinkChoose, "➡"), (.adminLinkChoose, "→"), (.adminLinkChoose, "⭢"):
+            let page = (await sessions.get(chatId))?.page ?? 0
+            await showAdminLinkEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
+            return
+            
+        case (.adminLinkChoose, "← Назад"):
+             await sessions.set(chatId, Session(state: .adminMenu))
+             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
+             return
+
+         case (.adminLinkChoose, _):
+              let input = trimmed
+              let sel = parseEmployeeSelection(input)
+              
+              do {
+                  let candidates = (try? await Employee.query(on: db)
+                      .filter(\.$isActive == true)
+                      .filter(\.$telegramId == nil)
+                      .filter(\.$fullName == sel.name)
+                      .sort(\.$id, .ascending)
+                      .all()) ?? []
+                  
+                  let emp: Employee?
+                  if let idx = sel.index {
+                      emp = (idx >= 1 && idx <= candidates.count) ? candidates[idx - 1] : nil
+                  } else {
+                      emp = candidates.first
+                  }
+                  
+                  guard let emp = emp, let empId = try? emp.requireID() else {
+                      await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден или уже привязан.")
+                      return
+                  }
+                  
+                  // 1. Удаляем старые неиспользованные заявки для этого сотрудника
+                  try await PendingLink.query(on: db)
+                      .filter(\.$employee.$id == empId)
+                      .filter(\.$isUsed == false)
+                      .delete()
+                  
+                  // 2. Генерируем новый уникальный код (до 5 попыток)
+                  var code = ""
+                  var success = false
+                  for _ in 1...5 {
+                      let randomCode = String(Int.random(in: 100000...999999))
+                      let existing = try await PendingLink.query(on: db).filter(\.$code == randomCode).first()
+                      if existing == nil {
+                          code = randomCode
+                          success = true
+                          break
+                      }
+                  }
+                  
+                  guard success else {
+                      await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Не удалось сгенерировать уникальный код. Попробуй еще раз.")
+                      return
+                  }
+                  
+                  // 3. Создаем новый PendingLink
+                  let expiresAt = Date().addingTimeInterval(15 * 60)
+                  let pending = PendingLink(code: code, employeeId: empId, createdByAdminTgId: userId, expiresAt: expiresAt)
+                  try await pending.save(on: db)
+                  
+                  let msg = """
+                  Новый код для сотрудника <b>\(emp.fullName)</b> сгенерирован! ✅
+                  
+                  Код привязки: <code>\(code)</code>
+                  
+                  Инструкция для сотрудника:
+                  1. Зайти в этот бот
+                  2. Написать команду: <code>/link \(code)</code>
+                  
+                  Код действует 15 минут.
+                  """
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: msg, replyMarkup: KeyboardBuilder.adminMenu())
+                  await sessions.set(chatId, Session(state: .adminMenu))
+                  
+                  app.logger.info("pending_regenerated: adminId=\(userId ?? 0), employeeId=\(empId), code=\(code)")
+              } catch {
+                  app.logger.error("Failed to regenerate pending link: \(error)")
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: \(error.localizedDescription)", replyMarkup: KeyboardBuilder.adminMenu())
+                  await sessions.set(chatId, Session(state: .adminMenu))
+              }
+              return
 
         case (.thanksMenu, "← Назад"):
             await TelegramService.sendMessage(

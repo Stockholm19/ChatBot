@@ -47,6 +47,7 @@ enum KeyboardBuilder {
         TgReplyKeyboard(
             keyboard: [
                 [ .init(text: "👤 Добавить сотрудника") ],
+                [ .init(text: "🔁 Привязка Telegram") ],
                 [ .init(text: "🚫 Деактивировать сотрудника") ],
                 [ .init(text: "📁 Архив сотрудников") ],
                 [ .init(text: "📊 Экспорт CSV") ],
@@ -126,6 +127,18 @@ enum KeyboardBuilder {
     static func back() -> TgReplyKeyboard {
         TgReplyKeyboard(
             keyboard: [
+                [ .init(text: "← Назад") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+
+    /// Клавиатура шага привязки Telegram при добавлении сотрудника (админка)
+    static func adminAddForwardMenu() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "🔗 Привязать через код") ],
                 [ .init(text: "← Назад") ]
             ],
             resize_keyboard: true,
