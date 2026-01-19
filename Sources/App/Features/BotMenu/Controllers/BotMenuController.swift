@@ -357,20 +357,27 @@ enum BotMenuController {
             )
             return
 
-         // Любой другой текст на этом шаге считаем выбором сотрудника по ФИО
-         case (.choosingEmployee, _):
-             let input = trimmed
-             let sel = parseEmployeeSelection(input)
-             if let idx = sel.index {
-                 let candidates = (try? await Employee.query(on: db)
-                     .filter(\.$isActive == true)
-                     .filter(\.$telegramId != nil)
-                     .filter(\.$fullName == sel.name)
-                     .sort(\.$id, .ascending)
-                     .all()) ?? []
-                 if idx >= 1, idx <= candidates.count,
-                    let empId = try? candidates[idx - 1].requireID() {
-                     let emp = candidates[idx - 1]
+          // Любой другой текст на этом шаге считаем выбором сотрудника по ФИО
+          case (.choosingEmployee, _):
+              let input = trimmed
+              let sel = parseEmployeeSelection(input)
+              if let idx = sel.index {
+                  let candidates = (try? await Employee.query(on: db)
+                      .filter(\.$isActive == true)
+                      .filter(\.$telegramId != nil)
+                      .filter(\.$fullName == sel.name)
+                      .all()) ?? []
+                  
+                  // Sort in-memory by uuidString to match keyboard sorting
+                  let sortedCandidates = candidates.sorted { a, b in
+                      let aId = (try? a.requireID())?.uuidString ?? ""
+                      let bId = (try? b.requireID())?.uuidString ?? ""
+                      return aId < bId
+                  }
+                  
+                  if idx >= 1, idx <= sortedCandidates.count,
+                     let empId = try? sortedCandidates[idx - 1].requireID() {
+                      let emp = sortedCandidates[idx - 1]
                      // запрет "самому себе" на этапе выбора
                      var senderEmployeeID: UUID? = nil
                      if let tg = userId {
@@ -911,10 +918,16 @@ enum BotMenuController {
                         text: "Ошибка: не удалось получить имя или Telegram ID. Начни добавление заново.",
                         replyMarkup: KeyboardBuilder.adminMenu()
                     )
-                    await sessions.set(chatId, Session(state: .adminMenu))
+                    var s = await sessions.get(chatId) ?? Session()
+                    s.draftFullName = nil
+                    s.draftTelegramId = nil
+                    s.selectedEmployeeId = nil
+                    s.chosenEmployeeId = nil
+                    s.state = .adminMenu
+                    await sessions.set(chatId, s)
                     return
                 }
-                 
+                  
                 let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !name.isEmpty else {
                     await TelegramService.sendMessage(
@@ -922,13 +935,19 @@ enum BotMenuController {
                         text: "Ошибка: имя пустое. Введи Фамилию и Имя.",
                         replyMarkup: KeyboardBuilder.adminMenu()
                     )
-                    await sessions.set(chatId, Session(state: .adminMenu))
+                    var s = await sessions.get(chatId) ?? Session()
+                    s.draftFullName = nil
+                    s.draftTelegramId = nil
+                    s.selectedEmployeeId = nil
+                    s.chosenEmployeeId = nil
+                    s.state = .adminMenu
+                    await sessions.set(chatId, s)
                     return
                 }
-                 
+                  
                 let newEmp = Employee(fullName: name, isActive: true)
                 newEmp.telegramId = tgId
-                 
+                  
                 do {
                     try await newEmp.save(on: db)
                     await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник \(name) добавлен! ✅", replyMarkup: KeyboardBuilder.adminMenu())
@@ -936,7 +955,13 @@ enum BotMenuController {
                     app.logger.error("Failed to add employee: \(error)")
                     await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка при сохранении: \(error.localizedDescription)", replyMarkup: KeyboardBuilder.adminMenu())
                 }
-                await sessions.set(chatId, Session(state: .adminMenu))
+                var s = await sessions.get(chatId) ?? Session()
+                s.draftFullName = nil
+                s.draftTelegramId = nil
+                s.selectedEmployeeId = nil
+                s.chosenEmployeeId = nil
+                s.state = .adminMenu
+                await sessions.set(chatId, s)
                 return
 
 
@@ -957,18 +982,25 @@ enum BotMenuController {
              await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
              return
 
-         case (.adminDeactivateChoose, _):
-              let input = trimmed
-              let sel = parseEmployeeSelection(input)
-              if let idx = sel.index {
-                  let candidates = (try? await Employee.query(on: db)
-                      .filter(\.$isActive == true)
-                      .filter(\.$fullName == sel.name)
-                      .sort(\.$id, .ascending)
-                      .all()) ?? []
-                  if idx >= 1, idx <= candidates.count,
-                     let eid = try? candidates[idx - 1].requireID() {
-                      let emp = candidates[idx - 1]
+          case (.adminDeactivateChoose, _):
+               let input = trimmed
+               let sel = parseEmployeeSelection(input)
+               if let idx = sel.index {
+                   let candidates = (try? await Employee.query(on: db)
+                       .filter(\.$isActive == true)
+                       .filter(\.$fullName == sel.name)
+                       .all()) ?? []
+                   
+                   // Sort in-memory by uuidString to match keyboard sorting
+                   let sortedCandidates = candidates.sorted { a, b in
+                       let aId = (try? a.requireID())?.uuidString ?? ""
+                       let bId = (try? b.requireID())?.uuidString ?? ""
+                       return aId < bId
+                   }
+                   
+                   if idx >= 1, idx <= sortedCandidates.count,
+                      let eid = try? sortedCandidates[idx - 1].requireID() {
+                       let emp = sortedCandidates[idx - 1]
                       var sess = await sessions.get(chatId) ?? Session()
                       sess.selectedEmployeeId = eid
                       sess.state = .adminDeactivateConfirm
@@ -1027,18 +1059,25 @@ enum BotMenuController {
              await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
              return
 
-          case (.adminArchiveChoose, _):
-               let input = trimmed
-               let sel = parseEmployeeSelection(input)
-               if let idx = sel.index {
-                   let candidates = (try? await Employee.query(on: db)
-                       .filter(\.$isActive == false)
-                       .filter(\.$fullName == sel.name)
-                       .sort(\.$id, .ascending)
-                       .all()) ?? []
-                   if idx >= 1, idx <= candidates.count,
-                      let eid = try? candidates[idx - 1].requireID() {
-                       let emp = candidates[idx - 1]
+           case (.adminArchiveChoose, _):
+                let input = trimmed
+                let sel = parseEmployeeSelection(input)
+                if let idx = sel.index {
+                    let candidates = (try? await Employee.query(on: db)
+                        .filter(\.$isActive == false)
+                        .filter(\.$fullName == sel.name)
+                        .all()) ?? []
+                    
+                    // Sort in-memory by uuidString to match keyboard sorting
+                    let sortedCandidates = candidates.sorted { a, b in
+                        let aId = (try? a.requireID())?.uuidString ?? ""
+                        let bId = (try? b.requireID())?.uuidString ?? ""
+                        return aId < bId
+                    }
+                    
+                    if idx >= 1, idx <= sortedCandidates.count,
+                       let eid = try? sortedCandidates[idx - 1].requireID() {
+                        let emp = sortedCandidates[idx - 1]
                        var sess = await sessions.get(chatId) ?? Session()
                        sess.selectedEmployeeId = eid
                        sess.state = .adminArchiveActions
@@ -1193,24 +1232,30 @@ enum BotMenuController {
              await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
              return
 
-         case (.adminLinkChoose, _):
-              let input = trimmed
-              let sel = parseEmployeeSelection(input)
-              
-              do {
-                  let candidates = (try? await Employee.query(on: db)
-                      .filter(\.$isActive == true)
-                      .filter(\.$telegramId == nil)
-                      .filter(\.$fullName == sel.name)
-                      .sort(\.$id, .ascending)
-                      .all()) ?? []
-                  
-                  let emp: Employee?
-                  if let idx = sel.index {
-                      emp = (idx >= 1 && idx <= candidates.count) ? candidates[idx - 1] : nil
-                  } else {
-                      emp = candidates.first
-                  }
+          case (.adminLinkChoose, _):
+               let input = trimmed
+               let sel = parseEmployeeSelection(input)
+               
+               do {
+                   let candidates = (try? await Employee.query(on: db)
+                       .filter(\.$isActive == true)
+                       .filter(\.$telegramId == nil)
+                       .filter(\.$fullName == sel.name)
+                       .all()) ?? []
+                   
+                   // Sort in-memory by uuidString to match keyboard sorting
+                   let sortedCandidates = candidates.sorted { a, b in
+                       let aId = (try? a.requireID())?.uuidString ?? ""
+                       let bId = (try? b.requireID())?.uuidString ?? ""
+                       return aId < bId
+                   }
+                   
+                   let emp: Employee?
+                   if let idx = sel.index {
+                       emp = (idx >= 1 && idx <= sortedCandidates.count) ? sortedCandidates[idx - 1] : nil
+                   } else {
+                       emp = sortedCandidates.first
+                   }
                   
                   guard let emp = emp, let empId = try? emp.requireID() else {
                       await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден или уже привязан.")
