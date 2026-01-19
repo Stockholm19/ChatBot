@@ -13,94 +13,157 @@ enum BotMenuController {
     // Минимальная длина текста благодарности
     private static let minReasonLength = 20
 
-    // MARK: - Helpers
+     // MARK: - Helpers
+     
+     /// Нормализует ник: trim + lowercased + ensure leading '@'
+     private static func normalizeUsername(_ raw: String) -> String {
+         let t = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+         if t.isEmpty { return "@unknown" }
+         return t.hasPrefix("@") ? t : "@\(t)"
+     }
+     
+     /// Возвращает срез массива для страницы `page` (0-based) по `per` элементов
+     private static func pageSlice<T>(_ items: [T], page: Int, per: Int = 10) -> ArraySlice<T> {
+         let start = max(0, page * per)
+         let end = min(items.count, start + per)
+         return items[start..<end]
+     }
+     
+     /// Парсит выбор сотрудника из текста кнопки.
+     /// Поддерживает формат "ФИО (N)" только для случаев, когда есть дубли ФИО.
+     /// Возвращает базовое ФИО и порядковый номер (1-based), если он указан.
+     private static func parseEmployeeSelection(_ text: String) -> (name: String, index: Int?) {
+         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+         guard t.hasSuffix(")"), let open = t.lastIndex(of: "(") else {
+             return (t, nil)
+         }
+         let inside = t[t.index(after: open)..<t.index(before: t.endIndex)]
+         let numStr = inside.trimmingCharacters(in: .whitespacesAndNewlines)
+         guard let n = Int(numStr), n > 0 else {
+             return (t, nil)
+         }
+         let base = t[..<open].trimmingCharacters(in: .whitespacesAndNewlines)
+         return (String(base), n)
+     }
     
-    /// Нормализует ник: trim + lowercased + ensure leading '@'
-    private static func normalizeUsername(_ raw: String) -> String {
-        let t = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if t.isEmpty { return "@unknown" }
-        return t.hasPrefix("@") ? t : "@\(t)"
-    }
-    
-    /// Возвращает срез массива для страницы `page` (0-based) по `per` элементов
-    private static func pageSlice<T>(_ items: [T], page: Int, per: Int = 10) -> ArraySlice<T> {
-        let start = max(0, page * per)
-        let end = min(items.count, start + per)
-        return items[start..<end]
-    }
-    
-    /// Показывает страницу каталога сотрудников
-    private static func showEmployeesPage(
-        app: Application,
-        api: String,
-        chatId: Int64,
-        sessions: SessionStore,
-        db: Database,
-        page: Int
-    ) async {
-        let all = (try? await Employee.query(on: db)
-            .filter(\.$isActive == true)
-            .sort(\.$fullName, .ascending)
-            .all()) ?? []
-        
-        let per = 10
-        let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
-        let p = max(0, min(page, totalPages - 1))
-        let slice = pageSlice(all, page: p, per: per)
-        let names = Array(slice.map { $0.fullName })
-        
-        await TelegramService.sendMessage(
-            app, api: api, chatId: chatId,
-            text: "Кому сказать спасибо?",
-            replyMarkup: KeyboardBuilder.employeesPage(
-                names: names,
-                hasPrev: p > 0,
-                hasNext: p < totalPages - 1
-            )
-        )
-        await sessions.set(chatId, Session(state: .choosingEmployee, page: p))
-    }
+     /// Показывает страницу каталога сотрудников
+     private static func showEmployeesPage(
+         app: Application,
+         api: String,
+         chatId: Int64,
+         sessions: SessionStore,
+         db: Database,
+         page: Int
+     ) async {
+         let all = (try? await Employee.query(on: db)
+             .filter(\.$isActive == true)
+             .sort(\.$fullName, .ascending)
+             .all()) ?? []
+         
+         let per = 10
+         let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
+         let p = max(0, min(page, totalPages - 1))
+         let slice = pageSlice(all, page: p, per: per)
+         // Формируем подписи кнопок. Суффикс "(N)" добавляем только если есть дубли ФИО.
+         var titleById: [UUID: String] = [:]
+         let groups = Dictionary(grouping: all, by: { $0.fullName })
+         for (name, emps) in groups {
+             if emps.count == 1, let id = try? emps[0].requireID() {
+                 titleById[id] = name
+             } else {
+                 let sorted = emps.sorted { a, b in
+                     let aId = (try? a.requireID())?.uuidString ?? ""
+                     let bId = (try? b.requireID())?.uuidString ?? ""
+                     return aId < bId
+                 }
+                 for (i, emp) in sorted.enumerated() {
+                     if let id = try? emp.requireID() {
+                         titleById[id] = "\(name) (\(i + 1))"
+                     }
+                 }
+             }
+         }
 
-    /// Показывает страницу сотрудников (активных или архивных) для админа
-    private static func showAdminEmployeesPage(
-        app: Application,
-        api: String,
-        chatId: Int64,
-        sessions: SessionStore,
-        db: Database,
-        page: Int,
-        active: Bool,
-        targetState: SessionState
-    ) async {
-        let all = (try? await Employee.query(on: db)
-            .filter(\.$isActive == active)
-            .sort(\.$fullName, .ascending)
-            .all()) ?? []
-        
-        let per = 10
-        let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
-        let p = max(0, min(page, totalPages - 1))
-        let slice = pageSlice(all, page: p, per: per)
-        let names = Array(slice.map { $0.fullName })
-        
-        let title = active ? "Кого деактивировать?" : "Кого вернуть из архива?"
-        
-        await TelegramService.sendMessage(
-            app, api: api, chatId: chatId,
-            text: title,
-            replyMarkup: KeyboardBuilder.employeesPage(
-                names: names,
-                hasPrev: p > 0,
-                hasNext: p < totalPages - 1
-            )
-        )
-        // Сохраняем стейт, но возможно нужно не терять другие поля. 
-        // Но при навигации они обычно не нужны.
-        var session = await sessions.get(chatId) ?? Session()
-        session.state = targetState
-        session.page = p
-        await sessions.set(chatId, session)
-    }
+         let titles = Array(slice.map { emp -> String in
+             guard let id = try? emp.requireID() else { return emp.fullName }
+             return titleById[id] ?? emp.fullName
+         })
+         
+         await TelegramService.sendMessage(
+             app, api: api, chatId: chatId,
+             text: "Кому сказать спасибо?",
+             replyMarkup: KeyboardBuilder.employeesPage(
+                 names: titles,
+                 hasPrev: p > 0,
+                 hasNext: p < totalPages - 1
+             )
+         )
+         await sessions.set(chatId, Session(state: .choosingEmployee, page: p))
+     }
+
+     /// Показывает страницу сотрудников (активных или архивных) для админа
+     private static func showAdminEmployeesPage(
+         app: Application,
+         api: String,
+         chatId: Int64,
+         sessions: SessionStore,
+         db: Database,
+         page: Int,
+         active: Bool,
+         targetState: SessionState
+     ) async {
+         let all = (try? await Employee.query(on: db)
+             .filter(\.$isActive == active)
+             .sort(\.$fullName, .ascending)
+             .all()) ?? []
+         
+         let per = 10
+         let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
+         let p = max(0, min(page, totalPages - 1))
+         let slice = pageSlice(all, page: p, per: per)
+         // Формируем подписи кнопок. Суффикс "(N)" добавляем только если есть дубли ФИО.
+         var titleById: [UUID: String] = [:]
+         let groups = Dictionary(grouping: all, by: { $0.fullName })
+         for (name, emps) in groups {
+             if emps.count == 1, let id = try? emps[0].requireID() {
+                 titleById[id] = name
+             } else {
+                 let sorted = emps.sorted { a, b in
+                     let aId = (try? a.requireID())?.uuidString ?? ""
+                     let bId = (try? b.requireID())?.uuidString ?? ""
+                     return aId < bId
+                 }
+                 for (i, emp) in sorted.enumerated() {
+                     if let id = try? emp.requireID() {
+                         titleById[id] = "\(name) (\(i + 1))"
+                     }
+                 }
+             }
+         }
+
+         let titles = Array(slice.map { emp -> String in
+             guard let id = try? emp.requireID() else { return emp.fullName }
+             return titleById[id] ?? emp.fullName
+         })
+         
+         let title = active ? "Кого деактивировать?" : "Кого вернуть из архива?"
+         
+         await TelegramService.sendMessage(
+             app, api: api, chatId: chatId,
+             text: title,
+             replyMarkup: KeyboardBuilder.employeesPage(
+                 names: titles,
+                 hasPrev: p > 0,
+                 hasNext: p < totalPages - 1
+             )
+         )
+         // Сохраняем стейт, но возможно нужно не терять другие поля.
+         // Но при навигации они обычно не нужны.
+         var session = await sessions.get(chatId) ?? Session()
+         session.state = targetState
+         session.page = p
+         await sessions.set(chatId, session)
+     }
 
     // MARK: - Roles
 
@@ -232,15 +295,57 @@ enum BotMenuController {
             )
             return
 
-        // Любой другой текст на этом шаге считаем выбором сотрудника по ФИО
-        case (.choosingEmployee, _):
-            let name = trimmed
-            if let emp = try? await Employee.query(on: db)
-                .filter(\.$isActive == true)
-                .filter(\.$fullName == name)
-                .first(),
-               let empId = try? emp.requireID() {
-                
+         // Любой другой текст на этом шаге считаем выбором сотрудника по ФИО
+         case (.choosingEmployee, _):
+             let input = trimmed
+             let sel = parseEmployeeSelection(input)
+             if let idx = sel.index {
+                 let candidates = (try? await Employee.query(on: db)
+                     .filter(\.$isActive == true)
+                     .filter(\.$fullName == sel.name)
+                     .sort(\.$id, .ascending)
+                     .all()) ?? []
+                 if idx >= 1, idx <= candidates.count,
+                    let empId = try? candidates[idx - 1].requireID() {
+                     let emp = candidates[idx - 1]
+                     // запрет "самому себе" на этапе выбора
+                     var senderEmployeeID: UUID? = nil
+                     if let tg = userId {
+                         senderEmployeeID = try? await Employee.query(on: db)
+                             .filter(\.$telegramId == tg)
+                             .first()?
+                             .requireID()
+                     }
+                     if let sid = senderEmployeeID, sid == empId {
+                         await TelegramService.sendMessage(
+                             app, api: api, chatId: chatId,
+                             text: "Нельзя отправить спасибо самому себе 🙂 Выбери коллегу.",
+                             replyMarkup: KeyboardBuilder.backToEmployeesList()
+                         )
+                         await sessions.set(chatId, Session(state: .choosingEmployee, to: nil, page: (await sessions.get(chatId))?.page))
+                         app.logger.info("self_kudos_blocked ui tg:\(userId.map(String.init) ?? "nil")")
+                         return
+                     }
+                     // Preserve the current page when transitioning to awaitingReason
+                     let currentPage = (await sessions.get(chatId))?.page
+                     await sessions.set(chatId, Session(state: .awaitingReason, to: nil, page: currentPage, chosenEmployeeId: empId))
+                     await TelegramService.sendMessage(
+                         app, api: api, chatId: chatId,
+                         text: "Напиши короткое сообщение, за что \(emp.fullName) получит благодарность. 🌟 (от \(minReasonLength) символов)",
+                         replyMarkup: KeyboardBuilder.reasonMenu()
+                     )
+                     return
+                 } else {
+                     await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Не нашел такого сотрудника. Листай </> или выбери из списка.")
+                     return
+                 }
+             }
+             // Fallback: ищем по полному ФИО (для старых сообщений или ручного ввода)
+             if let emp = try? await Employee.query(on: db)
+                 .filter(\.$isActive == true)
+                 .filter(\.$fullName == sel.name)
+                 .first(),
+                let empId = try? emp.requireID() {
                  // запрет "самому себе" на этапе выбора
                  var senderEmployeeID: UUID? = nil
                  if let tg = userId {
@@ -262,19 +367,19 @@ enum BotMenuController {
                  // Preserve the current page when transitioning to awaitingReason
                  let currentPage = (await sessions.get(chatId))?.page
                  await sessions.set(chatId, Session(state: .awaitingReason, to: nil, page: currentPage, chosenEmployeeId: empId))
-                await TelegramService.sendMessage(
-                    app, api: api, chatId: chatId,
-                    text: "Напиши короткое сообщение, за что \(emp.fullName) получит благодарность. 🌟 (от \(minReasonLength) символов)",
-                    replyMarkup: KeyboardBuilder.reasonMenu()
-                )
-                return
-            } else {
-                await TelegramService.sendMessage(
-                    app, api: api, chatId: chatId,
-                    text: "Не нашёл такого сотрудника. Листай </> или выбери из списка."
-                )
-                return
-            }
+                 await TelegramService.sendMessage(
+                     app, api: api, chatId: chatId,
+                     text: "Напиши короткое сообщение, за что \(emp.fullName) получит благодарность. 🌟 (от \(minReasonLength) символов)",
+                     replyMarkup: KeyboardBuilder.reasonMenu()
+                 )
+                 return
+             } else {
+                 await TelegramService.sendMessage(
+                     app, api: api, chatId: chatId,
+                     text: "Не нашёл такого сотрудника. Листай </> или выбери из списка."
+                 )
+                 return
+             }
 
         // MARK: Главное меню → подменю «Спасибо»
         case (.mainMenu, "Передать спасибо"):
@@ -700,21 +805,41 @@ enum BotMenuController {
              await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
              return
 
-        case (.adminDeactivateChoose, _):
-             // Chosen employee
-             if let emp = try? await Employee.query(on: db).filter(\.$fullName == trimmed).filter(\.$isActive == true).first(),
-                let eid = try? emp.requireID() {
-                 
-                 var sess = await sessions.get(chatId) ?? Session()
-                 sess.selectedEmployeeId = eid
-                 sess.state = .adminDeactivateConfirm
-                 await sessions.set(chatId, sess)
-                 
-                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Деактивировать \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
-             } else {
-                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден.")
-             }
-             return
+         case (.adminDeactivateChoose, _):
+              let input = trimmed
+              let sel = parseEmployeeSelection(input)
+              if let idx = sel.index {
+                  let candidates = (try? await Employee.query(on: db)
+                      .filter(\.$isActive == true)
+                      .filter(\.$fullName == sel.name)
+                      .sort(\.$id, .ascending)
+                      .all()) ?? []
+                  if idx >= 1, idx <= candidates.count,
+                     let eid = try? candidates[idx - 1].requireID() {
+                      let emp = candidates[idx - 1]
+                      var sess = await sessions.get(chatId) ?? Session()
+                      sess.selectedEmployeeId = eid
+                      sess.state = .adminDeactivateConfirm
+                      await sessions.set(chatId, sess)
+                      await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Деактивировать \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
+                      return
+                  } else {
+                      await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден.")
+                      return
+                  }
+              }
+              // Fallback: ищем по полному ФИО
+              if let emp = try? await Employee.query(on: db).filter(\.$fullName == sel.name).filter(\.$isActive == true).first(),
+                 let eid = try? emp.requireID() {
+                  var sess = await sessions.get(chatId) ?? Session()
+                  sess.selectedEmployeeId = eid
+                  sess.state = .adminDeactivateConfirm
+                  await sessions.set(chatId, sess)
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Деактивировать \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
+              } else {
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден.")
+              }
+              return
 
         case (.adminDeactivateConfirm, "Нет"):
              await sessions.set(chatId, Session(state: .adminMenu))
@@ -750,21 +875,41 @@ enum BotMenuController {
              await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
              return
 
-        case (.adminArchiveChoose, _):
-             // Chosen employee
-             if let emp = try? await Employee.query(on: db).filter(\.$fullName == trimmed).filter(\.$isActive == false).first(),
-                let eid = try? emp.requireID() {
-                 
-                 var sess = await sessions.get(chatId) ?? Session()
-                 sess.selectedEmployeeId = eid
-                 sess.state = .adminArchiveConfirm
-                 await sessions.set(chatId, sess)
-                 
-                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Вернуть сотрудника \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
-             } else {
-                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден.")
-             }
-             return
+         case (.adminArchiveChoose, _):
+              let input = trimmed
+              let sel = parseEmployeeSelection(input)
+              if let idx = sel.index {
+                  let candidates = (try? await Employee.query(on: db)
+                      .filter(\.$isActive == false)
+                      .filter(\.$fullName == sel.name)
+                      .sort(\.$id, .ascending)
+                      .all()) ?? []
+                  if idx >= 1, idx <= candidates.count,
+                     let eid = try? candidates[idx - 1].requireID() {
+                      let emp = candidates[idx - 1]
+                      var sess = await sessions.get(chatId) ?? Session()
+                      sess.selectedEmployeeId = eid
+                      sess.state = .adminArchiveConfirm
+                      await sessions.set(chatId, sess)
+                      await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Вернуть сотрудника \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
+                      return
+                  } else {
+                      await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден.")
+                      return
+                  }
+              }
+              // Fallback: ищем по полному ФИО
+              if let emp = try? await Employee.query(on: db).filter(\.$fullName == sel.name).filter(\.$isActive == false).first(),
+                 let eid = try? emp.requireID() {
+                  var sess = await sessions.get(chatId) ?? Session()
+                  sess.selectedEmployeeId = eid
+                  sess.state = .adminArchiveConfirm
+                  await sessions.set(chatId, sess)
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Вернуть сотрудника \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
+              } else {
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден.")
+              }
+              return
              
         case (.adminArchiveConfirm, "Нет"):
              await sessions.set(chatId, Session(state: .adminMenu))
