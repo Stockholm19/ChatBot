@@ -57,6 +57,7 @@ enum BotMenuController {
      ) async {
          let all = (try? await Employee.query(on: db)
              .filter(\.$isActive == true)
+             .filter(\.$telegramId != nil)
              .sort(\.$fullName, .ascending)
              .all()) ?? []
          
@@ -363,6 +364,7 @@ enum BotMenuController {
              if let idx = sel.index {
                  let candidates = (try? await Employee.query(on: db)
                      .filter(\.$isActive == true)
+                     .filter(\.$telegramId != nil)
                      .filter(\.$fullName == sel.name)
                      .sort(\.$id, .ascending)
                      .all()) ?? []
@@ -404,6 +406,7 @@ enum BotMenuController {
              // Fallback: ищем по полному ФИО (для старых сообщений или ручного ввода)
              if let emp = try? await Employee.query(on: db)
                  .filter(\.$isActive == true)
+                 .filter(\.$telegramId != nil)
                  .filter(\.$fullName == sel.name)
                  .first(),
                 let empId = try? emp.requireID() {
