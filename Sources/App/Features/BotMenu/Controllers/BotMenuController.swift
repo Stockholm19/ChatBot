@@ -1027,41 +1027,137 @@ enum BotMenuController {
              await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
              return
 
-         case (.adminArchiveChoose, _):
-              let input = trimmed
-              let sel = parseEmployeeSelection(input)
-              if let idx = sel.index {
-                  let candidates = (try? await Employee.query(on: db)
-                      .filter(\.$isActive == false)
-                      .filter(\.$fullName == sel.name)
-                      .sort(\.$id, .ascending)
-                      .all()) ?? []
-                  if idx >= 1, idx <= candidates.count,
-                     let eid = try? candidates[idx - 1].requireID() {
-                      let emp = candidates[idx - 1]
-                      var sess = await sessions.get(chatId) ?? Session()
-                      sess.selectedEmployeeId = eid
-                      sess.state = .adminArchiveConfirm
-                      await sessions.set(chatId, sess)
-                      await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Вернуть сотрудника \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
-                      return
-                  } else {
-                      await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден.")
-                      return
-                  }
-              }
-              // Fallback: ищем по полному ФИО
-              if let emp = try? await Employee.query(on: db).filter(\.$fullName == sel.name).filter(\.$isActive == false).first(),
-                 let eid = try? emp.requireID() {
+          case (.adminArchiveChoose, _):
+               let input = trimmed
+               let sel = parseEmployeeSelection(input)
+               if let idx = sel.index {
+                   let candidates = (try? await Employee.query(on: db)
+                       .filter(\.$isActive == false)
+                       .filter(\.$fullName == sel.name)
+                       .sort(\.$id, .ascending)
+                       .all()) ?? []
+                   if idx >= 1, idx <= candidates.count,
+                      let eid = try? candidates[idx - 1].requireID() {
+                       let emp = candidates[idx - 1]
+                       var sess = await sessions.get(chatId) ?? Session()
+                       sess.selectedEmployeeId = eid
+                       sess.state = .adminArchiveActions
+                       await sessions.set(chatId, sess)
+                       await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Выбран сотрудник: \(emp.fullName)\nЧто сделать?", replyMarkup: KeyboardBuilder.adminArchiveActionsMenu())
+                       return
+                   } else {
+                       await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден.")
+                       return
+                   }
+               }
+               // Fallback: ищем по полному ФИО
+               if let emp = try? await Employee.query(on: db).filter(\.$fullName == sel.name).filter(\.$isActive == false).first(),
+                  let eid = try? emp.requireID() {
+                   var sess = await sessions.get(chatId) ?? Session()
+                   sess.selectedEmployeeId = eid
+                   sess.state = .adminArchiveActions
+                   await sessions.set(chatId, sess)
+                   await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Выбран сотрудник: \(emp.fullName)\nЧто сделать?", replyMarkup: KeyboardBuilder.adminArchiveActionsMenu())
+               } else {
+                   await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден.")
+               }
+               return
+               
+         case (.adminArchiveActions, "✅ Восстановить"):
+              let eid = (await sessions.get(chatId))?.selectedEmployeeId
+              if let eid = eid, let emp = try? await Employee.find(eid, on: db) {
                   var sess = await sessions.get(chatId) ?? Session()
-                  sess.selectedEmployeeId = eid
                   sess.state = .adminArchiveConfirm
                   await sessions.set(chatId, sess)
                   await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Вернуть сотрудника \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
               } else {
-                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник не найден.")
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: сотрудник не найден.", replyMarkup: KeyboardBuilder.adminMenu())
+                  await sessions.set(chatId, Session(state: .adminMenu))
               }
               return
+
+         case (.adminArchiveActions, "🗑 Удалить из системы"):
+              let eid = (await sessions.get(chatId))?.selectedEmployeeId
+              if let eid = eid, let emp = try? await Employee.find(eid, on: db) {
+                  // Подсчитываем количество Kudos
+                  let countTo = (try? await Kudos.query(on: db).filter(\.$employee.$id == eid).count()) ?? 0
+                  let countFrom = (try? await Kudos.query(on: db).filter(\.$fromEmployee.$id == eid).count()) ?? 0
+                  
+                  var sess = await sessions.get(chatId) ?? Session()
+                  sess.state = .adminArchiveDeleteConfirm
+                  await sessions.set(chatId, sess)
+                  
+                  let msg = """
+                  ⚠️ <b>ВНИМАНИЕ!</b> Это действие необратимо.
+                  
+                  Будет удален сотрудник <b>\(emp.fullName)</b> и все его благодарности:
+                  - Полученных: \(countTo)
+                  - Отправленных: \(countFrom)
+                  
+                  Удалить сотрудника из системы навсегда?
+                  """
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: msg, replyMarkup: KeyboardBuilder.yesNo())
+              } else {
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: сотрудник не найден.", replyMarkup: KeyboardBuilder.adminMenu())
+                  await sessions.set(chatId, Session(state: .adminMenu))
+              }
+              return
+
+         case (.adminArchiveActions, "← Назад"):
+              let page = (await sessions.get(chatId))?.page ?? 0
+              await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page, active: false, targetState: .adminArchiveChoose)
+              return
+
+         case (.adminArchiveDeleteConfirm, "Нет"):
+              let sess = await sessions.get(chatId) ?? Session()
+              if let eid = sess.selectedEmployeeId, let emp = try? await Employee.find(eid, on: db) {
+                  var newSess = sess
+                  newSess.state = .adminArchiveActions
+                  await sessions.set(chatId, newSess)
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Удаление отменено.\n\nВыбран сотрудник: \(emp.fullName)\nЧто сделать?", replyMarkup: KeyboardBuilder.adminArchiveActionsMenu())
+              } else {
+                  await sessions.set(chatId, Session(state: .adminMenu))
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Отменено.", replyMarkup: KeyboardBuilder.adminMenu())
+              }
+              return
+
+         case (.adminArchiveDeleteConfirm, "Да"):
+              guard let sess = await sessions.get(chatId), let eid = sess.selectedEmployeeId else {
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: сессия потеряна.", replyMarkup: KeyboardBuilder.adminMenu())
+                  await sessions.set(chatId, Session(state: .adminMenu))
+                  return
+              }
+              
+              do {
+                  try await db.transaction { tx in
+                      // 1. Считаем для лога перед удалением
+                      let countTo = try await Kudos.query(on: tx).filter(\.$employee.$id == eid).count()
+                      let countFrom = try await Kudos.query(on: tx).filter(\.$fromEmployee.$id == eid).count()
+                      
+                      // 2. Удаляем Kudos
+                      try await Kudos.query(on: tx).group(.or) { or in
+                          or.filter(\.$employee.$id == eid)
+                          or.filter(\.$fromEmployee.$id == eid)
+                      }.delete()
+                      
+                      // 3. Удаляем сотрудника
+                      guard let emp = try await Employee.find(eid, on: tx) else {
+                          throw Abort(.notFound, reason: "Employee not found")
+                      }
+                      try await emp.delete(on: tx)
+                      
+                      // 4. Логируем
+                      app.logger.info("admin_full_delete_employee id=\(eid) kudos_to=\(countTo) kudos_from=\(countFrom) admin_tg=\(userId.map(String.init) ?? username ?? "unknown")")
+                  }
+                  
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник и все его благодарности полностью удалены из системы. 🗑✅", replyMarkup: KeyboardBuilder.adminMenu())
+              } catch {
+                  app.logger.error("admin_full_delete_employee_failed id=\(eid) error=\(error)")
+                  await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка при удалении: \(error.localizedDescription)", replyMarkup: KeyboardBuilder.adminMenu())
+              }
+              await sessions.set(chatId, Session(state: .adminMenu))
+              return
+
              
         case (.adminArchiveConfirm, "Нет"):
              await sessions.set(chatId, Session(state: .adminMenu))

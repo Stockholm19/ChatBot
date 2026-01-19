@@ -31,6 +31,8 @@ public enum SessionState: String, Codable {
     // Admin: Archive
     case adminArchiveChoose
     case adminArchiveConfirm
+    case adminArchiveActions
+    case adminArchiveDeleteConfirm
     
     // Admin: Link Telegram
     case adminLinkChoose

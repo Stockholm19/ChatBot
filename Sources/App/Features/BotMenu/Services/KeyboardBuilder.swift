@@ -145,6 +145,18 @@ enum KeyboardBuilder {
             one_time_keyboard: false
         )
     }
+
+    static func adminArchiveActionsMenu() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "✅ Восстановить") ],
+                [ .init(text: "🗑 Удалить из системы") ],
+                [ .init(text: "← Назад") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
     
     static func yesNo() -> TgReplyKeyboard {
         TgReplyKeyboard(
