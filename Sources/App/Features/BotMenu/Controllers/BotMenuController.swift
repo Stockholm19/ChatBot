@@ -1373,7 +1373,12 @@ enum BotMenuController {
                 text: "Сообщение должно содержать не менее \(minReasonLength) символов.",
                 replyMarkup: KeyboardBuilder.reasonMenu()
             )
-            await sessions.set(chatId, Session(state: .awaitingReason, to: currentTo))
+
+            var s = await sessions.get(chatId) ?? Session()
+            s.state = .awaitingReason
+            s.to = currentTo
+            // важно: не трогаем chosenEmployeeId и page
+            await sessions.set(chatId, s)
             return
 
         // Принята причина → сохраняем
