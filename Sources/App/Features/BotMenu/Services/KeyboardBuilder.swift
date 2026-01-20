@@ -178,4 +178,30 @@ enum KeyboardBuilder {
             one_time_keyboard: true
         )
     }
+
+    /// Клавиатура для меню привязки Telegram (админка)
+    static func adminTelegramMenu() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "➕ Привязать Telegram") ],
+                [ .init(text: "🔄 Изменить Telegram") ],
+                [ .init(text: "← Назад") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+
+    /// Клавиатура для меню ожидания форварда (привязка/изменение Telegram)
+    static func adminTelegramForwardMenu() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "🔗 Получить код") ],
+                [ .init(text: "Отмена") ],
+                [ .init(text: "← Назад") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
 }

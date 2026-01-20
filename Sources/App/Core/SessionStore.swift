@@ -36,6 +36,13 @@ public enum SessionState: String, Codable {
     
     // Admin: Link Telegram
     case adminLinkChoose
+    
+    // Admin: Enhanced Telegram Binding
+    case adminTelegramMenu
+    case adminTelegramBindChoose
+    case adminTelegramBindAwaitForward
+    case adminTelegramChangeChoose
+    case adminTelegramChangeAwaitForward
 }
 
 /// 2. Данные одной сессии (сохраняем состояние и, например, выбранного получателя)
