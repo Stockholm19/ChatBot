@@ -79,7 +79,7 @@ ChatBot/
 │   ├── Reminders/
 │   │   └── messages                # Тексты напоминании (JSON)
 │   └── SeedData/
-│       ├── employees               # Исходные сотрудники для первичного сидирования
+│       ├── employees.csv           # CSV для разового импорта сотрудников (опционально)
 │       └── employees.template.csv  # Шаблон для подготовки списка сотрудников
 │
 ├── Screenshots/                    # Скриншоты бота
@@ -140,7 +140,10 @@ ChatBot/
 
 ### Каталог сотрудников
 
-- Список сотрудников загружается из CSV-файла `Resources/SeedData/employees.csv` и автоматически сохраняется в базу при первом запуске.
+- Источник правды по сотрудникам — база данных, управляемая через админ-панель в Telegram.
+- CSV-файл `Resources/SeedData/employees.csv` используется только для разового массового импорта и по умолчанию не применяется при старте.
+- Чтобы включить импорт при старте, установите переменную окружения: `EMPLOYEES_CSV_IMPORT_ON_BOOT=1`.
+- Режим импорта безопасный: CSV **только добавляет** отсутствующих сотрудников и **не** обновляет существующих и **не** деактивирует тех, кого нет в CSV.
 - Каждая запись содержит:
   - ФИО сотрудника,
   - статус активности (Да/Нет),
@@ -348,6 +351,9 @@ docker compose logs -f
 
   ADMIN_IDS=12345678,12345678
 
+  # Опционально: разовыи импорт сотрудников из CSV при старте
+  # EMPLOYEES_CSV_IMPORT_ON_BOOT=1
+
   ```
 
 - Для запуска на VPS:
@@ -364,72 +370,32 @@ docker compose logs -f
   docker compose -f docker-compose.prod.yml up -d
   ```
 
-## Обновление сотрудников на VPS
-   ```bash
-    cd /apps/kudos-bot
-   ```
-    
-    
-   ```bash
-   nano employees.csv
-   ```
-    
-   ```bash
-   docker compose -f docker-compose.prod.yml exec -T db \
-  sh -c "cat > /tmp/employees.csv" < employees.csv
-   ```
-      
-   ```bash
-   docker compose -f docker-compose.prod.yml exec -T db \
-  psql -U postgres -d kudos << 'SQL'
-CREATE TEMP TABLE _emp(
-  full_name   text,
-  is_active   text,
-  telegram_id bigint
-);
+## Массовый импорт сотрудников на VPS (опционально)
 
-COPY _emp FROM '/tmp/employees.csv' WITH (FORMAT csv, HEADER true);
+Источник правды по сотрудникам — админ-панель в Telegram. CSV нужен только для разового массового добавления сотрудников (например, при первом запуске или при переносе базы).
 
--- 1) Обновляем существующих
-UPDATE employees e
-SET
-  full_name = trim(c.full_name),
-  is_active = CASE WHEN c.is_active ILIKE 'да' THEN true ELSE false END
-FROM _emp c
-WHERE e.telegram_id = c.telegram_id;
+### Вариант 1 (рекомендуется): через флаг импорта при старте
 
--- 2) Добавляем новых сотрудников
-INSERT INTO employees(full_name, is_active, telegram_id)
-SELECT
-  trim(full_name),
-  CASE WHEN is_active ILIKE 'да' THEN true ELSE false END,
-  telegram_id
-FROM _emp c
-WHERE NOT EXISTS (
-  SELECT 1 FROM employees e WHERE e.telegram_id = c.telegram_id
-);
+1. Подготовить CSV на сервере в `/apps/kudos-bot/Resources/SeedData/employees.csv` (формат как в `employees.template.csv`).
+2. В `.env` временно добавить:
 
--- 3) Деактивируем тех, кого нет в CSV
-UPDATE employees e
-SET is_active = false
-WHERE NOT EXISTS (
-  SELECT 1 FROM _emp c WHERE c.telegram_id = e.telegram_id
-);
-SQL
-   ```
-   
-   ```bash
-   docker compose -f docker-compose.prod.yml restart kudos-bot
-   ```
- 
- 
+```env
+EMPLOYEES_CSV_IMPORT_ON_BOOT=1
+```
 
----
+3. Перезапустить контейнер бота:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --no-deps --build kudos-bot
+```
+
+После импорта можно удалить переменную `EMPLOYEES_CSV_IMPORT_ON_BOOT`, чтобы при следующих рестартах импорт не выполнялся.
+
 
 ## Примечания
 
-- Safe-sync **не удаляет благодарности** и **не портит связи**, так как обновление выполняется по `telegram_id`.
-- Сотрудники, которых нет в CSV, автоматически получают `is_active = false`.
+- Админ-панель является источником правды по сотрудникам. CSV используется только для разового импорта (create-only) и не деактивирует существующих сотрудников.
+- Скрипт `Scripts/sync_employees.sql` можно использовать только как разовую утилиту миграции/починки и запускать осознанно (он может менять данные в БД).
 - Для аварийного полного сброса (reset) можно использовать TRUNCATE, но это редко нужно.
 
 
