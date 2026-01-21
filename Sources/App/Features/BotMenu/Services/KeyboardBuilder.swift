@@ -193,11 +193,22 @@ enum KeyboardBuilder {
     }
 
     /// Клавиатура для меню ожидания форварда (привязка/изменение Telegram)
-    static func adminTelegramForwardMenu() -> TgReplyKeyboard {
+    static func adminTelegramForwardMenuBind() -> TgReplyKeyboard {
         TgReplyKeyboard(
             keyboard: [
                 [ .init(text: "🔗 Получить код") ],
                 [ .init(text: "Отмена") ],
+                [ .init(text: "← Назад") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+
+    static func adminTelegramForwardMenuChange() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "🔗 Получить код") ],
                 [ .init(text: "← Назад") ]
             ],
             resize_keyboard: true,
