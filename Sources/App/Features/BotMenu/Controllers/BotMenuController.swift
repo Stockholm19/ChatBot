@@ -168,14 +168,6 @@ enum BotMenuController {
                 forwardedFromFirstName: fwd?.first_name,
                 forwardedFromLastName: fwd?.last_name
             )
-
-        default:
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Не понял команду. Пожалуйста, используй меню для навигации.",
-                replyMarkup: KeyboardBuilder.mainMenu()
-            )
-            await sessions.set(chatId, Session(state: .mainMenu, to: nil))
         }
     }
 }

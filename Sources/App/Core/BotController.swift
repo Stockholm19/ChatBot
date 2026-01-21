@@ -104,7 +104,7 @@ enum BotController {
         app.logger.info("link_attempt: fromId=\(fromId), code=\(code)")
 
         do {
-            guard var pending = try await PendingLink.query(on: db)
+            guard let pending = try await PendingLink.query(on: db)
                 .filter(\.$code == code)
                 .with(\.$employee)
                 .first() else {
