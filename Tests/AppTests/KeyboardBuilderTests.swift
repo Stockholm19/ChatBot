@@ -150,4 +150,12 @@ final class KeyboardBuilderTests: XCTestCase {
         XCTAssertEqual(row2, ["Экспорт полученных"])
         XCTAssertEqual(row3, ["← Назад"])
     }
+
+    // MARK: - adminMenu()
+
+    func testAdminMenuContainsEditFullNameButton() throws {
+        let keyboard = KeyboardBuilder.adminMenu()
+        let allTexts = keyboard.keyboard.flatMap { $0.map(\.text) }
+        XCTAssertTrue(allTexts.contains("✏️ Редактировать ФИО"))
+    }
 }

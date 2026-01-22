@@ -140,6 +140,15 @@ extension BotMenuController {
         case .adminDeactivateChoose:
             await handleAdminDeactivateChoose(app: app, api: api, chatId: chatId, sessions: sessions, db: db, text: text, trimmed: trimmed)
 
+        case .adminEditNameChoose:
+            await handleAdminEditNameChoose(app: app, api: api, chatId: chatId, sessions: sessions, db: db, text: text, trimmed: trimmed)
+
+        case .adminEditNameAsk:
+            await handleAdminEditNameAsk(app: app, api: api, chatId: chatId, sessions: sessions, db: db, text: text, trimmed: trimmed)
+
+        case .adminEditNameConfirm:
+            await handleAdminEditNameConfirm(app: app, api: api, chatId: chatId, sessions: sessions, db: db, text: text)
+
         case .adminDeactivateConfirm:
             if text == "Нет" {
                 var s = await sessions.get(chatId) ?? Session()
@@ -295,6 +304,153 @@ extension BotMenuController {
                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Деактивировать \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
             }
         }
+    }
+
+    private static func handleAdminEditNameChoose(app: Application, api: String, chatId: Int64, sessions: SessionStore, db: Database, text: String, trimmed: String) async {
+        if ["<", "⬅", "←", "⭠"].contains(text) {
+            let page = (await sessions.get(chatId))?.page ?? 0
+            await showAdminEditNameEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1))
+        } else if [">", "➡", "→", "⭢"].contains(text) {
+            let page = (await sessions.get(chatId))?.page ?? 0
+            await showAdminEditNameEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
+        } else if text == "← Назад" {
+            var session = await sessions.get(chatId) ?? Session()
+            session.state = .adminMenu
+            session.selectedEmployeeId = nil
+            session.draftFullName = nil
+            await sessions.set(chatId, session)
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
+        } else {
+            let sel = parseEmployeeSelection(trimmed)
+            let candidates = (try? await Employee.query(on: db)
+                .filter(\.$fullName == sel.name)
+                .all()) ?? []
+
+            let sorted = candidates.sorted { a, b in
+                let aId = (try? a.requireID())?.uuidString ?? ""
+                let bId = (try? b.requireID())?.uuidString ?? ""
+                return aId < bId
+            }
+
+            let chosen: Employee?
+            if let idx = sel.index, idx > 0, idx <= sorted.count {
+                chosen = sorted[idx - 1]
+            } else {
+                chosen = sorted.first
+            }
+
+            guard let emp = chosen, let empId = try? emp.requireID() else { return }
+
+            var session = await sessions.get(chatId) ?? Session()
+            session.selectedEmployeeId = empId
+            session.draftFullName = nil
+            session.state = .adminEditNameAsk
+            await sessions.set(chatId, session)
+
+            await TelegramService.sendMessage(
+                app,
+                api: api,
+                chatId: chatId,
+                text: "Текущее ФИО: \(emp.fullName)\n\nВведи новое ФИО (например: Иванов Иван)",
+                replyMarkup: KeyboardBuilder.back()
+            )
+        }
+    }
+
+    private static func handleAdminEditNameAsk(app: Application, api: String, chatId: Int64, sessions: SessionStore, db: Database, text: String, trimmed: String) async {
+        if text == "← Назад" {
+            let page = (await sessions.get(chatId))?.page ?? 0
+            await showAdminEditNameEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page)
+            return
+        }
+
+        guard !trimmed.isEmpty else {
+            await TelegramService.sendMessage(
+                app,
+                api: api,
+                chatId: chatId,
+                text: "Ошибка: ФИО пустое. Введи Фамилию и Имя.",
+                replyMarkup: KeyboardBuilder.back()
+            )
+            return
+        }
+
+        guard let session = await sessions.get(chatId),
+              let empId = session.selectedEmployeeId,
+              let emp = try? await Employee.find(empId, on: db) else {
+            await sessions.set(chatId, Session(state: .adminMenu))
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: сотрудник не найден.", replyMarkup: KeyboardBuilder.adminMenu())
+            return
+        }
+
+        var newSession = session
+        newSession.draftFullName = trimmed
+        newSession.state = .adminEditNameConfirm
+        await sessions.set(chatId, newSession)
+
+        await TelegramService.sendMessage(
+            app,
+            api: api,
+            chatId: chatId,
+            text: "Изменить ФИО:\n\(emp.fullName) → \(trimmed)\n\nВсе верно?",
+            replyMarkup: KeyboardBuilder.yesNoCancel()
+        )
+    }
+
+    private static func handleAdminEditNameConfirm(app: Application, api: String, chatId: Int64, sessions: SessionStore, db: Database, text: String) async {
+        if text == "Отмена" {
+            var session = await sessions.get(chatId) ?? Session()
+            session.state = .adminMenu
+            session.selectedEmployeeId = nil
+            session.draftFullName = nil
+            await sessions.set(chatId, session)
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Отменено.", replyMarkup: KeyboardBuilder.adminMenu())
+            return
+        }
+
+        if text == "Нет" {
+            var session = await sessions.get(chatId) ?? Session()
+            session.state = .adminEditNameAsk
+            session.draftFullName = nil
+            await sessions.set(chatId, session)
+            if let empId = session.selectedEmployeeId, let emp = try? await Employee.find(empId, on: db) {
+                await TelegramService.sendMessage(
+                    app,
+                    api: api,
+                    chatId: chatId,
+                    text: "Текущее ФИО: \(emp.fullName)\n\nВведи новое ФИО (например: Иванов Иван)",
+                    replyMarkup: KeyboardBuilder.back()
+                )
+            }
+            return
+        }
+
+        guard text == "Да" else { return }
+
+        guard let session = await sessions.get(chatId),
+              let empId = session.selectedEmployeeId,
+              let newName = session.draftFullName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !newName.isEmpty,
+              let emp = try? await Employee.find(empId, on: db) else {
+            await sessions.set(chatId, Session(state: .adminMenu))
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: не удалось обновить ФИО.", replyMarkup: KeyboardBuilder.adminMenu())
+            return
+        }
+
+        let oldName = emp.fullName
+        emp.fullName = newName
+        do {
+            try await emp.save(on: db)
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "✅ ФИО обновлено: \(oldName) → \(newName)", replyMarkup: KeyboardBuilder.adminMenu())
+        } catch {
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка сохранения: \(error.localizedDescription)", replyMarkup: KeyboardBuilder.adminMenu())
+        }
+
+        var reset = session
+        reset.state = .adminMenu
+        reset.selectedEmployeeId = nil
+        reset.draftFullName = nil
+        await sessions.set(chatId, reset)
     }
 
     private static func handleAdminArchiveChoose(app: Application, api: String, chatId: Int64, sessions: SessionStore, db: Database, text: String, trimmed: String) async {

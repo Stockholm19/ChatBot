@@ -61,6 +61,8 @@ extension BotMenuController {
                 var session = await sessions.get(chatId) ?? Session()
                 session.state = .adminTelegramMenu
                 await sessions.set(chatId, session)
+            } else if text.contains("Редактировать ФИО") {
+                await showAdminEditNameEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0)
             } else if text.contains("Деактивировать сотрудника") {
                 await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0, active: true, targetState: .adminDeactivateChoose)
             } else if text.contains("Архив сотрудников") {

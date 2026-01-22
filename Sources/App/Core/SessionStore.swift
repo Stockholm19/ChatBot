@@ -27,6 +27,11 @@ public enum SessionState: String, Codable {
     // Admin: Deactivate
     case adminDeactivateChoose
     case adminDeactivateConfirm
+
+    // Admin: Edit Full Name
+    case adminEditNameChoose
+    case adminEditNameAsk
+    case adminEditNameConfirm
     
     // Admin: Archive
     case adminArchiveChoose

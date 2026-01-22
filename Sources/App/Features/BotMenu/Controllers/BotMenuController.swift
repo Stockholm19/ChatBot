@@ -116,12 +116,13 @@ enum BotMenuController {
         if !isUserAdmin {
             switch state {
             case .adminMenu,
-                 .adminTelegramMenu, .adminTelegramBindChoose, .adminTelegramBindAwaitForward,
-                 .adminTelegramChangeChoose, .adminTelegramChangeAwaitForward,
-                 .adminLinkChoose,
-                 .adminAddAskName, .adminAddConfirmName, .adminAddAskForward, .adminAddConfirmAccount,
-                 .adminDeactivateChoose, .adminDeactivateConfirm,
-                 .adminArchiveChoose, .adminArchiveActions, .adminArchiveConfirm, .adminArchiveDeleteConfirm:
+                  .adminTelegramMenu, .adminTelegramBindChoose, .adminTelegramBindAwaitForward,
+                  .adminTelegramChangeChoose, .adminTelegramChangeAwaitForward,
+                  .adminLinkChoose,
+                  .adminAddAskName, .adminAddConfirmName, .adminAddAskForward, .adminAddConfirmAccount,
+                  .adminDeactivateChoose, .adminDeactivateConfirm,
+                  .adminEditNameChoose, .adminEditNameAsk, .adminEditNameConfirm,
+                  .adminArchiveChoose, .adminArchiveActions, .adminArchiveConfirm, .adminArchiveDeleteConfirm:
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
                     text: "Раздел администратора доступен только администраторам.",
@@ -167,6 +168,20 @@ enum BotMenuController {
                 forwardedFromUsername: fwd?.username,
                 forwardedFromFirstName: fwd?.first_name,
                 forwardedFromLastName: fwd?.last_name
+            )
+
+        case .adminEditNameChoose, .adminEditNameAsk, .adminEditNameConfirm:
+            await handleAdminEmployeesState(
+                app: app,
+                api: api,
+                chatId: chatId,
+                userId: userId,
+                username: username,
+                sessions: sessions,
+                db: db,
+                state: state,
+                text: t,
+                trimmed: trimmed
             )
         }
     }

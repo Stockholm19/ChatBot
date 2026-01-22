@@ -48,6 +48,7 @@ enum KeyboardBuilder {
             keyboard: [
                 [ .init(text: "👤 Добавить сотрудника") ],
                 [ .init(text: "🔁 Привязка Telegram") ],
+                [ .init(text: "✏️ Редактировать ФИО") ],
                 [ .init(text: "🚫 Деактивировать сотрудника") ],
                 [ .init(text: "📁 Архив сотрудников") ],
                 [ .init(text: "📊 Экспорт CSV") ],

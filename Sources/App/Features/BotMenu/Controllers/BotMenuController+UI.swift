@@ -245,6 +245,64 @@ extension BotMenuController {
           await sessions.set(chatId, session)
       }
 
+      /// Показывает страницу сотрудников для редактирования ФИО (все сотрудники)
+      static func showAdminEditNameEmployeesPage(
+          app: Application,
+          api: String,
+          chatId: Int64,
+          sessions: SessionStore,
+          db: Database,
+          page: Int
+      ) async {
+          let all = (try? await Employee.query(on: db)
+              .sort(\.$fullName, .ascending)
+              .all()) ?? []
+
+          let per = 10
+          let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
+          let p = max(0, min(page, totalPages - 1))
+          let slice = pageSlice(all, page: p, per: per)
+
+          var titleById: [UUID: String] = [:]
+          let groups = Dictionary(grouping: all, by: { $0.fullName })
+          for (name, emps) in groups {
+              if emps.count == 1, let id = try? emps[0].requireID() {
+                  titleById[id] = name
+              } else {
+                  let sorted = emps.sorted { a, b in
+                      let aId = (try? a.requireID())?.uuidString ?? ""
+                      let bId = (try? b.requireID())?.uuidString ?? ""
+                      return aId < bId
+                  }
+                  for (i, emp) in sorted.enumerated() {
+                      if let id = try? emp.requireID() {
+                          titleById[id] = "\(name) (\(i + 1))"
+                      }
+                  }
+              }
+          }
+
+          let titles = Array(slice.map { emp -> String in
+              guard let id = try? emp.requireID() else { return emp.fullName }
+              return titleById[id] ?? emp.fullName
+          })
+
+          await TelegramService.sendMessage(
+              app, api: api, chatId: chatId,
+              text: "Выберите сотрудника для редактирования ФИО:",
+              replyMarkup: KeyboardBuilder.employeesPage(
+                  names: titles,
+                  hasPrev: p > 0,
+                  hasNext: p < totalPages - 1
+              )
+          )
+
+          var session = await sessions.get(chatId) ?? Session()
+          session.state = .adminEditNameChoose
+          session.page = p
+          await sessions.set(chatId, session)
+      }
+
      /// Показывает страницу сотрудников без telegramId для привязки Telegram
      static func showAdminTelegramBindEmployeesPage(
          app: Application,
