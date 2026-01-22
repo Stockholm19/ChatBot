@@ -17,6 +17,37 @@ public enum SessionState: String, Codable {
     case awaitingRecipient
     case awaitingReason
     case adminMenu
+    
+    // Admin: Add Employee
+    case adminAddAskName
+    case adminAddConfirmName
+    case adminAddAskForward
+    case adminAddConfirmAccount
+    
+    // Admin: Deactivate
+    case adminDeactivateChoose
+    case adminDeactivateConfirm
+
+    // Admin: Edit Full Name
+    case adminEditNameChoose
+    case adminEditNameAsk
+    case adminEditNameConfirm
+    
+    // Admin: Archive
+    case adminArchiveChoose
+    case adminArchiveConfirm
+    case adminArchiveActions
+    case adminArchiveDeleteConfirm
+    
+    // Admin: Link Telegram
+    case adminLinkChoose
+    
+    // Admin: Enhanced Telegram Binding
+    case adminTelegramMenu
+    case adminTelegramBindChoose
+    case adminTelegramBindAwaitForward
+    case adminTelegramChangeChoose
+    case adminTelegramChangeAwaitForward
 }
 
 /// 2. Данные одной сессии (сохраняем состояние и, например, выбранного получателя)
@@ -25,11 +56,26 @@ public struct Session: Codable {
     public var to: String?
     public var page: Int?
     public var chosenEmployeeId: UUID?
-    public init(state: SessionState = .mainMenu, to: String? = nil, page: Int? = nil, chosenEmployeeId: UUID? = nil) {
+    
+    // New fields for Admin Flow
+    public var draftFullName: String?
+    public var draftTelegramId: Int64?
+    public var selectedEmployeeId: UUID?
+
+    public init(state: SessionState = .mainMenu, 
+                to: String? = nil, 
+                page: Int? = nil, 
+                chosenEmployeeId: UUID? = nil,
+                draftFullName: String? = nil,
+                draftTelegramId: Int64? = nil,
+                selectedEmployeeId: UUID? = nil) {
         self.state = state
         self.to = to
         self.page = page
         self.chosenEmployeeId = chosenEmployeeId
+        self.draftFullName = draftFullName
+        self.draftTelegramId = draftTelegramId
+        self.selectedEmployeeId = selectedEmployeeId
     }
 }
 

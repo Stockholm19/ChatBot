@@ -17,4 +17,6 @@ public func migrations(_ app: Application) {
     app.migrations.add(AddTelegramIdToEmployees())
     app.migrations.add(AddEmployeeIdToKudos())
     app.migrations.add(AddFromEmployeeIdToKudos())
+    app.migrations.add(CreatePendingLinks())
+    app.migrations.add(AddCreatedAtToEmployees())
 }

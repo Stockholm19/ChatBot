@@ -23,6 +23,7 @@ struct TgMessage: Decodable {
     let text: String?
     let chat: TgChat
     let from: TgUser?
+    let forward_from: TgUser?
 }
 
 struct TgChat: Decodable {

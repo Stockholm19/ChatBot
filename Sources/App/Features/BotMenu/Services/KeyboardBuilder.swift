@@ -47,6 +47,8 @@ enum KeyboardBuilder {
         TgReplyKeyboard(
             keyboard: [
                 [ .init(text: "👤 Добавить сотрудника") ],
+                [ .init(text: "🔁 Привязка Telegram") ],
+                [ .init(text: "✏️ Редактировать ФИО") ],
                 [ .init(text: "🚫 Деактивировать сотрудника") ],
                 [ .init(text: "📁 Архив сотрудников") ],
                 [ .init(text: "📊 Экспорт CSV") ],
@@ -115,6 +117,100 @@ enum KeyboardBuilder {
         TgReplyKeyboard(
             keyboard: [
                 [ .init(text: "← Назад к списку") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+    
+    // MARK: - Admin Keyboards
+
+    static func back() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "← Назад") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+
+    /// Клавиатура шага привязки Telegram при добавлении сотрудника (админка)
+    static func adminAddForwardMenu() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "🔗 Привязать через код") ],
+                [ .init(text: "← Назад") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+
+    static func adminArchiveActionsMenu() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "✅ Восстановить") ],
+                [ .init(text: "🗑 Удалить из системы") ],
+                [ .init(text: "← Назад") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+    
+    static func yesNo() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "Да"), .init(text: "Нет") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true
+        )
+    }
+    
+    static func yesNoCancel() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "Да"), .init(text: "Нет") ],
+                [ .init(text: "Отмена") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true
+        )
+    }
+
+    /// Клавиатура для меню привязки Telegram (админка)
+    static func adminTelegramMenu() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "➕ Привязать Telegram") ],
+                [ .init(text: "🔄 Изменить Telegram") ],
+                [ .init(text: "← Назад") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+
+    /// Клавиатура для меню ожидания форварда (привязка/изменение Telegram)
+    static func adminTelegramForwardMenuBind() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "🔗 Получить код") ],
+                [ .init(text: "Отмена") ],
+                [ .init(text: "← Назад") ]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        )
+    }
+
+    static func adminTelegramForwardMenuChange() -> TgReplyKeyboard {
+        TgReplyKeyboard(
+            keyboard: [
+                [ .init(text: "🔗 Получить код") ],
+                [ .init(text: "← Назад") ]
             ],
             resize_keyboard: true,
             one_time_keyboard: false
