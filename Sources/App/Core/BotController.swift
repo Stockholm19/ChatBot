@@ -80,6 +80,62 @@ enum BotController {
         )
     }
 
+    /// Обработка callback_query от Inline Keyboard
+    static func handleCallback(app: Application, query q: TgCallbackQuery, api: String, sessions: SessionStore) async {
+        guard let callbackMessage = q.message else {
+            await TelegramService.answerCallbackQuery(app, api: api, callbackQueryId: q.id)
+            return
+        }
+
+        let chatId = callbackMessage.chat.id
+        guard chatId > 0 else {
+            await TelegramService.answerCallbackQuery(app, api: api, callbackQueryId: q.id)
+            return
+        }
+
+        let userId = q.from.id
+        if BotMenuController.isAdmin(userId: userId, username: q.from.username) {
+            app.logger.info("Admin callback access granted for user: \(userId)")
+        } else {
+            do {
+                let employee = try await Employee.query(on: app.db)
+                    .filter(\.$telegramId == userId)
+                    .filter(\.$isActive == true)
+                    .first()
+
+                guard employee != nil else {
+                    await TelegramService.answerCallbackQuery(
+                        app,
+                        api: api,
+                        callbackQueryId: q.id,
+                        text: "Доступ ограничен только для сотрудников.",
+                        showAlert: true
+                    )
+                    app.logger.info("Callback access denied for non-employee or inactive user: \(userId)")
+                    return
+                }
+            } catch {
+                app.logger.error("Database error during callback employee check: \(error.localizedDescription)")
+                await TelegramService.answerCallbackQuery(
+                    app,
+                    api: api,
+                    callbackQueryId: q.id,
+                    text: "Внутренняя ошибка. Попробуйте позже.",
+                    showAlert: true
+                )
+                return
+            }
+        }
+
+        await BotMenuController.handleCallback(
+            app: app,
+            api: api,
+            query: q,
+            sessions: sessions,
+            db: app.db
+        )
+    }
+
     /// Обработка команды /link <code>
     private static func handleLinkCommand(app: Application, message m: TgMessage, api: String, db: Database) async {
         let chatId = m.chat.id

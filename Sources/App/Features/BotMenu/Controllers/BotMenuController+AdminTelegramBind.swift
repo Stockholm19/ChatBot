@@ -248,7 +248,7 @@ extension BotMenuController {
         await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Отменено.", replyMarkup: KeyboardBuilder.adminTelegramMenu())
     }
 
-    private static func handleAdminTelegramGenerateCode(app: Application, api: String, chatId: Int64, userId: Int64?, sessions: SessionStore, db: Database) async {
+    static func handleAdminTelegramGenerateCode(app: Application, api: String, chatId: Int64, userId: Int64?, sessions: SessionStore, db: Database) async {
         guard let empId = (await sessions.get(chatId))?.selectedEmployeeId, let emp = try? await Employee.find(empId, on: db) else { return }
         try? await PendingLink.query(on: db).filter(\.$employee.$id == empId).filter(\.$isUsed == false).delete()
         var code = ""

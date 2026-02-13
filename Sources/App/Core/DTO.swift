@@ -15,6 +15,7 @@ struct TgResp<T: Decodable>: Decodable {
 struct TgUpdate: Decodable {
     let update_id: Int
     let message: TgMessage?
+    let callback_query: TgCallbackQuery?
 }
 
 struct TgMessage: Decodable {
@@ -35,4 +36,17 @@ struct TgUser: Decodable {
     let username: String?
     let first_name: String?
     let last_name: String?
+}
+
+struct TgCallbackQuery: Decodable {
+    let id: String
+    let from: TgUser
+    let message: TgCallbackMessage?
+    let data: String?
+}
+
+struct TgCallbackMessage: Decodable {
+    let message_id: Int
+    let chat: TgChat
+    let text: String?
 }
