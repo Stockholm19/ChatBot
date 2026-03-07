@@ -66,19 +66,52 @@ extension BotMenuController {
         chatId: Int64,
         sessions: SessionStore,
         db: Database,
-        page: Int
+        page: Int,
+        editMessageId: Int? = nil
     ) async {
+        let data = await loadActiveEmployeesPage(db: db, page: page)
+        let inlineOptions = data.slice.compactMap { emp -> KeyboardBuilder.EmployeeInlineOption? in
+            guard let id = try? emp.requireID() else { return nil }
+            return .init(id: id, title: data.titleById[id] ?? emp.fullName)
+        }
+
+        let text = "Выберите сотрудника для благодарности: (стр. \(data.page + 1)/\(data.totalPages))"
+        let keyboard = KeyboardBuilder.employeesInlinePage(
+            options: inlineOptions,
+            hasPrev: data.page > 0,
+            hasNext: data.page < data.totalPages - 1,
+            page: data.page,
+            callbackPrefix: "emp"
+        )
+
+        let activeMessageId = await sendOrEditInlineEmployeesList(
+            app: app,
+            api: api,
+            chatId: chatId,
+            text: text,
+            inlineMarkup: keyboard,
+            editMessageId: editMessageId
+        )
+
+        var session = await sessions.get(chatId) ?? Session()
+        session.state = .choosingEmployee
+        session.page = data.page
+        session.activeInlineListMessageId = activeMessageId
+        await sessions.set(chatId, session)
+    }
+
+    static func loadActiveEmployeesPage(db: Database, page: Int) async -> (all: [Employee], slice: ArraySlice<Employee>, titleById: [UUID: String], page: Int, totalPages: Int) {
         let all = (try? await Employee.query(on: db)
             .filter(\.$isActive == true)
             .filter(\.$telegramId != nil)
             .sort(\.$fullName, .ascending)
             .all()) ?? []
-        
+
         let per = 10
         let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
         let p = max(0, min(page, totalPages - 1))
         let slice = pageSlice(all, page: p, per: per)
-        // Формируем подписи кнопок. Суффикс "(N)" добавляем только если есть дубли ФИО.
+
         var titleById: [UUID: String] = [:]
         let groups = Dictionary(grouping: all, by: { $0.fullName })
         for (name, emps) in groups {
@@ -98,21 +131,65 @@ extension BotMenuController {
             }
         }
 
-        let titles = Array(slice.map { emp -> String in
-            guard let id = try? emp.requireID() else { return emp.fullName }
-            return titleById[id] ?? emp.fullName
-        })
-        
-        await TelegramService.sendMessage(
-            app, api: api, chatId: chatId,
-            text: "Кому сказать спасибо?",
-            replyMarkup: KeyboardBuilder.employeesPage(
-                names: titles,
-                hasPrev: p > 0,
-                hasNext: p < totalPages - 1
+        return (all: all, slice: slice, titleById: titleById, page: p, totalPages: totalPages)
+    }
+
+    static func sendOrEditInlineEmployeesList(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        text: String,
+        inlineMarkup: TgInlineKeyboardMarkup,
+        editMessageId: Int?
+    ) async -> Int? {
+        if let editMessageId {
+            await TelegramService.editMessageText(
+                app,
+                api: api,
+                chatId: chatId,
+                messageId: editMessageId,
+                text: text,
+                inlineMarkup: inlineMarkup
             )
+            return editMessageId
+        }
+
+        await TelegramService.hideReplyKeyboardSilently(
+            app,
+            api: api,
+            chatId: chatId
         )
-        await sessions.set(chatId, Session(state: .choosingEmployee, page: p))
+
+        return await TelegramService.sendInlineMessage(
+            app,
+            api: api,
+            chatId: chatId,
+            text: text,
+            inlineMarkup: inlineMarkup
+        )
+    }
+
+    static func closeActiveInlineList(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        sessions: SessionStore
+    ) async {
+        guard var session = await sessions.get(chatId),
+              let messageId = session.activeInlineListMessageId else {
+            return
+        }
+
+        await TelegramService.editMessageReplyMarkup(
+            app,
+            api: api,
+            chatId: chatId,
+            messageId: messageId,
+            inlineMarkup: nil
+        )
+
+        session.activeInlineListMessageId = nil
+        await sessions.set(chatId, session)
     }
 
     /// Показывает страницу сотрудников (активных или архивных) для админа
@@ -124,12 +201,12 @@ extension BotMenuController {
         db: Database,
         page: Int,
         active: Bool,
-        targetState: SessionState
+        targetState: SessionState,
+        editMessageId: Int? = nil
     ) async {
         let q = Employee.query(on: db)
             .filter(\.$isActive == active)
 
-        // Deactivate should only show real, linked employees
         if active && targetState == .adminDeactivateChoose {
             q.filter(\.$telegramId != nil)
         }
@@ -137,12 +214,164 @@ extension BotMenuController {
         let all = (try? await q
             .sort(\.$fullName, .ascending)
             .all()) ?? []
-        
+
+        let data = employeePageData(all: all, page: page)
+        let title = active
+            ? "Кого деактивировать? (стр. \(data.page + 1)/\(data.totalPages))"
+            : "Кого вернуть из архива? (стр. \(data.page + 1)/\(data.totalPages))"
+        let callbackPrefix = targetState == .adminDeactivateChoose ? "adm:deact" : "adm:arch"
+
+        let activeMessageId = await sendAdminInlineList(
+            app: app,
+            api: api,
+            chatId: chatId,
+            text: title,
+            data: data,
+            callbackPrefix: callbackPrefix,
+            editMessageId: editMessageId
+        )
+
+        var session = await sessions.get(chatId) ?? Session()
+        session.state = targetState
+        session.page = data.page
+        session.activeInlineListMessageId = activeMessageId
+        await sessions.set(chatId, session)
+    }
+
+    static func showAdminLinkEmployeesPage(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        sessions: SessionStore,
+        db: Database,
+        page: Int,
+        editMessageId: Int? = nil
+    ) async {
+        let all = (try? await Employee.query(on: db)
+            .filter(\.$telegramId == nil)
+            .sort(\.$fullName, .ascending)
+            .all()) ?? []
+
+        let data = employeePageData(all: all, page: page)
+        let activeMessageId = await sendAdminInlineList(
+            app: app,
+            api: api,
+            chatId: chatId,
+            text: "Выберите сотрудника для привязки Telegram: (стр. \(data.page + 1)/\(data.totalPages))",
+            data: data,
+            callbackPrefix: "adm:link",
+            editMessageId: editMessageId
+        )
+
+        var session = await sessions.get(chatId) ?? Session()
+        session.state = .adminLinkChoose
+        session.page = data.page
+        session.activeInlineListMessageId = activeMessageId
+        await sessions.set(chatId, session)
+    }
+
+    static func showAdminEditNameEmployeesPage(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        sessions: SessionStore,
+        db: Database,
+        page: Int,
+        editMessageId: Int? = nil
+    ) async {
+        let all = (try? await Employee.query(on: db)
+            .sort(\.$fullName, .ascending)
+            .all()) ?? []
+
+        let data = employeePageData(all: all, page: page)
+        let activeMessageId = await sendAdminInlineList(
+            app: app,
+            api: api,
+            chatId: chatId,
+            text: "Выберите сотрудника для редактирования ФИО: (стр. \(data.page + 1)/\(data.totalPages))",
+            data: data,
+            callbackPrefix: "adm:edit",
+            editMessageId: editMessageId
+        )
+
+        var session = await sessions.get(chatId) ?? Session()
+        session.state = .adminEditNameChoose
+        session.page = data.page
+        session.activeInlineListMessageId = activeMessageId
+        await sessions.set(chatId, session)
+    }
+
+    static func showAdminTelegramBindEmployeesPage(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        sessions: SessionStore,
+        db: Database,
+        page: Int,
+        editMessageId: Int? = nil
+    ) async {
+        let all = (try? await Employee.query(on: db)
+            .filter(\.$telegramId == nil)
+            .sort(\.$fullName, .ascending)
+            .all()) ?? []
+
+        let data = employeePageData(all: all, page: page)
+        let activeMessageId = await sendAdminInlineList(
+            app: app,
+            api: api,
+            chatId: chatId,
+            text: "Выберите сотрудника для привязки Telegram: (стр. \(data.page + 1)/\(data.totalPages))",
+            data: data,
+            callbackPrefix: "adm:bind",
+            editMessageId: editMessageId
+        )
+
+        var session = await sessions.get(chatId) ?? Session()
+        session.state = .adminTelegramBindChoose
+        session.page = data.page
+        session.activeInlineListMessageId = activeMessageId
+        await sessions.set(chatId, session)
+    }
+
+    static func showAdminTelegramChangeEmployeesPage(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        sessions: SessionStore,
+        db: Database,
+        page: Int,
+        editMessageId: Int? = nil
+    ) async {
+        let all = (try? await Employee.query(on: db)
+            .filter(\.$telegramId != nil)
+            .filter(\.$isActive == true)
+            .sort(\.$fullName, .ascending)
+            .all()) ?? []
+
+        let data = employeePageData(all: all, page: page)
+        let activeMessageId = await sendAdminInlineList(
+            app: app,
+            api: api,
+            chatId: chatId,
+            text: "Выберите сотрудника для изменения Telegram ID: (стр. \(data.page + 1)/\(data.totalPages))",
+            data: data,
+            callbackPrefix: "adm:change",
+            editMessageId: editMessageId
+        )
+
+        var session = await sessions.get(chatId) ?? Session()
+        session.state = .adminTelegramChangeChoose
+        session.page = data.page
+        session.activeInlineListMessageId = activeMessageId
+        await sessions.set(chatId, session)
+    }
+
+    private static func employeePageData(all: [Employee], page: Int) -> (slice: ArraySlice<Employee>, titleById: [UUID: String], page: Int, totalPages: Int) {
         let per = 10
         let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
         let p = max(0, min(page, totalPages - 1))
         let slice = pageSlice(all, page: p, per: per)
-        // Формируем подписи кнопок. Суффикс "(N)" добавляем только если есть дубли ФИО.
+
         var titleById: [UUID: String] = [:]
         let groups = Dictionary(grouping: all, by: { $0.fullName })
         for (name, emps) in groups {
@@ -162,263 +391,36 @@ extension BotMenuController {
             }
         }
 
-        let titles = Array(slice.map { emp -> String in
-            guard let id = try? emp.requireID() else { return emp.fullName }
-            return titleById[id] ?? emp.fullName
-        })
-        
-        let title = active ? "Кого деактивировать?" : "Кого вернуть из архива?"
-        
-        await TelegramService.sendMessage(
-            app, api: api, chatId: chatId,
-            text: title,
-            replyMarkup: KeyboardBuilder.employeesPage(
-                names: titles,
-                hasPrev: p > 0,
-                hasNext: p < totalPages - 1
-            )
+        return (slice: slice, titleById: titleById, page: p, totalPages: totalPages)
+    }
+
+    private static func sendAdminInlineList(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        text: String,
+        data: (slice: ArraySlice<Employee>, titleById: [UUID: String], page: Int, totalPages: Int),
+        callbackPrefix: String,
+        editMessageId: Int?
+    ) async -> Int? {
+        let options = data.slice.compactMap { emp -> KeyboardBuilder.EmployeeInlineOption? in
+            guard let id = try? emp.requireID() else { return nil }
+            return .init(id: id, title: data.titleById[id] ?? emp.fullName)
+        }
+        let inline = KeyboardBuilder.employeesInlinePage(
+            options: options,
+            hasPrev: data.page > 0,
+            hasNext: data.page < data.totalPages - 1,
+            page: data.page,
+            callbackPrefix: callbackPrefix
         )
-        // Сохраняем стейт, но возможно нужно не терять другие поля.
-        // Но при навигации они обычно не нужны.
-         var session = await sessions.get(chatId) ?? Session()
-         session.state = targetState
-         session.page = p
-         await sessions.set(chatId, session)
-     }
-
-      /// Показывает страницу сотрудников без telegramId для админа (для повторной привязки)
-      static func showAdminLinkEmployeesPage(
-          app: Application,
-          api: String,
-          chatId: Int64,
-          sessions: SessionStore,
-          db: Database,
-          page: Int
-      ) async {
-          let all = (try? await Employee.query(on: db)
-              .filter(\.$telegramId == nil)
-              .sort(\.$fullName, .ascending)
-              .all()) ?? []
-         
-         let per = 10
-         let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
-         let p = max(0, min(page, totalPages - 1))
-         let slice = pageSlice(all, page: p, per: per)
-
-         var titleById: [UUID: String] = [:]
-         let groups = Dictionary(grouping: all, by: { $0.fullName })
-         for (name, emps) in groups {
-             if emps.count == 1, let id = try? emps[0].requireID() {
-                 titleById[id] = name
-             } else {
-                 let sorted = emps.sorted { a, b in
-                     let aId = (try? a.requireID())?.uuidString ?? ""
-                     let bId = (try? b.requireID())?.uuidString ?? ""
-                     return aId < bId
-                 }
-                 for (i, emp) in sorted.enumerated() {
-                     if let id = try? emp.requireID() {
-                         titleById[id] = "\(name) (\(i + 1))"
-                     }
-                 }
-             }
-         }
-
-         let titles = Array(slice.map { emp -> String in
-             guard let id = try? emp.requireID() else { return emp.fullName }
-             return titleById[id] ?? emp.fullName
-         })
-         
-         await TelegramService.sendMessage(
-             app, api: api, chatId: chatId,
-             text: "Выберите сотрудника для привязки Telegram:",
-             replyMarkup: KeyboardBuilder.employeesPage(
-                 names: titles,
-                 hasPrev: p > 0,
-                 hasNext: p < totalPages - 1
-             )
-         )
-         
-          var session = await sessions.get(chatId) ?? Session()
-          session.state = .adminLinkChoose
-          session.page = p
-          await sessions.set(chatId, session)
-      }
-
-      /// Показывает страницу сотрудников для редактирования ФИО (все сотрудники)
-      static func showAdminEditNameEmployeesPage(
-          app: Application,
-          api: String,
-          chatId: Int64,
-          sessions: SessionStore,
-          db: Database,
-          page: Int
-      ) async {
-          let all = (try? await Employee.query(on: db)
-              .sort(\.$fullName, .ascending)
-              .all()) ?? []
-
-          let per = 10
-          let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
-          let p = max(0, min(page, totalPages - 1))
-          let slice = pageSlice(all, page: p, per: per)
-
-          var titleById: [UUID: String] = [:]
-          let groups = Dictionary(grouping: all, by: { $0.fullName })
-          for (name, emps) in groups {
-              if emps.count == 1, let id = try? emps[0].requireID() {
-                  titleById[id] = name
-              } else {
-                  let sorted = emps.sorted { a, b in
-                      let aId = (try? a.requireID())?.uuidString ?? ""
-                      let bId = (try? b.requireID())?.uuidString ?? ""
-                      return aId < bId
-                  }
-                  for (i, emp) in sorted.enumerated() {
-                      if let id = try? emp.requireID() {
-                          titleById[id] = "\(name) (\(i + 1))"
-                      }
-                  }
-              }
-          }
-
-          let titles = Array(slice.map { emp -> String in
-              guard let id = try? emp.requireID() else { return emp.fullName }
-              return titleById[id] ?? emp.fullName
-          })
-
-          await TelegramService.sendMessage(
-              app, api: api, chatId: chatId,
-              text: "Выберите сотрудника для редактирования ФИО:",
-              replyMarkup: KeyboardBuilder.employeesPage(
-                  names: titles,
-                  hasPrev: p > 0,
-                  hasNext: p < totalPages - 1
-              )
-          )
-
-          var session = await sessions.get(chatId) ?? Session()
-          session.state = .adminEditNameChoose
-          session.page = p
-          await sessions.set(chatId, session)
-      }
-
-     /// Показывает страницу сотрудников без telegramId для привязки Telegram
-     static func showAdminTelegramBindEmployeesPage(
-         app: Application,
-         api: String,
-         chatId: Int64,
-         sessions: SessionStore,
-         db: Database,
-         page: Int
-     ) async {
-         let all = (try? await Employee.query(on: db)
-             .filter(\.$telegramId == nil)
-             .sort(\.$fullName, .ascending)
-             .all()) ?? []
-          
-         let per = 10
-         let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
-         let p = max(0, min(page, totalPages - 1))
-         let slice = pageSlice(all, page: p, per: per)
-         
-         var titleById: [UUID: String] = [:]
-         let groups = Dictionary(grouping: all, by: { $0.fullName })
-         for (name, emps) in groups {
-             if emps.count == 1, let id = try? emps[0].requireID() {
-                 titleById[id] = name
-             } else {
-                 let sorted = emps.sorted { a, b in
-                     let aId = (try? a.requireID())?.uuidString ?? ""
-                     let bId = (try? b.requireID())?.uuidString ?? ""
-                     return aId < bId
-                 }
-                 for (i, emp) in sorted.enumerated() {
-                     if let id = try? emp.requireID() {
-                         titleById[id] = "\(name) (\(i + 1))"
-                     }
-                 }
-             }
-         }
-
-         let titles = Array(slice.map { emp -> String in
-             guard let id = try? emp.requireID() else { return emp.fullName }
-             return titleById[id] ?? emp.fullName
-         })
-          
-         await TelegramService.sendMessage(
-             app, api: api, chatId: chatId,
-             text: "Выберите сотрудника для привязки Telegram:",
-             replyMarkup: KeyboardBuilder.employeesPage(
-                 names: titles,
-                 hasPrev: p > 0,
-                 hasNext: p < totalPages - 1
-             )
-         )
-         
-         var session = await sessions.get(chatId) ?? Session()
-         session.state = .adminTelegramBindChoose
-         session.page = p
-         await sessions.set(chatId, session)
-     }
-
-     /// Показывает страницу сотрудников с telegramId для изменения Telegram
-     static func showAdminTelegramChangeEmployeesPage(
-         app: Application,
-         api: String,
-         chatId: Int64,
-         sessions: SessionStore,
-         db: Database,
-         page: Int
-     ) async {
-         let all = (try? await Employee.query(on: db)
-             .filter(\.$telegramId != nil)
-             .filter(\.$isActive == true)
-             .sort(\.$fullName, .ascending)
-             .all()) ?? []
-          
-         let per = 10
-         let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
-         let p = max(0, min(page, totalPages - 1))
-         let slice = pageSlice(all, page: p, per: per)
-         
-         var titleById: [UUID: String] = [:]
-         let groups = Dictionary(grouping: all, by: { $0.fullName })
-         for (name, emps) in groups {
-             if emps.count == 1, let id = try? emps[0].requireID() {
-                 titleById[id] = name
-             } else {
-                 let sorted = emps.sorted { a, b in
-                     let aId = (try? a.requireID())?.uuidString ?? ""
-                     let bId = (try? b.requireID())?.uuidString ?? ""
-                     return aId < bId
-                 }
-                 for (i, emp) in sorted.enumerated() {
-                     if let id = try? emp.requireID() {
-                         titleById[id] = "\(name) (\(i + 1))"
-                     }
-                 }
-             }
-         }
-
-         let titles = Array(slice.map { emp -> String in
-             guard let id = try? emp.requireID() else { return emp.fullName }
-             return titleById[id] ?? emp.fullName
-         })
-          
-         await TelegramService.sendMessage(
-             app, api: api, chatId: chatId,
-             text: "Выберите сотрудника для изменения Telegram ID:",
-             replyMarkup: KeyboardBuilder.employeesPage(
-                 names: titles,
-                 hasPrev: p > 0,
-                 hasNext: p < totalPages - 1
-             )
-         )
-         
-         var session = await sessions.get(chatId) ?? Session()
-         session.state = .adminTelegramChangeChoose
-         session.page = p
-         await sessions.set(chatId, session)
-     }
+        return await sendOrEditInlineEmployeesList(
+            app: app,
+            api: api,
+            chatId: chatId,
+            text: text,
+            inlineMarkup: inline,
+            editMessageId: editMessageId
+        )
+    }
 }

@@ -62,11 +62,14 @@ extension BotMenuController {
     private static func handleAdminTelegramBindChoose(app: Application, api: String, chatId: Int64, sessions: SessionStore, db: Database, text: String, trimmed: String) async {
         if ["<", "⬅", "←", "⭠"].contains(text) {
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminTelegramBindEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1))
         } else if [">", "➡", "→", "⭢"].contains(text) {
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminTelegramBindEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
         } else if text == "← Назад" {
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             var session = await sessions.get(chatId) ?? Session()
             session.state = .adminTelegramMenu
             await sessions.set(chatId, session)
@@ -94,6 +97,7 @@ extension BotMenuController {
 
             if let emp = chosen,
                let empId = try? emp.requireID() {
+                await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
                 var session = await sessions.get(chatId) ?? Session()
                 session.selectedEmployeeId = empId
                 session.state = .adminTelegramBindAwaitForward
@@ -132,11 +136,14 @@ extension BotMenuController {
     private static func handleAdminTelegramChangeChoose(app: Application, api: String, chatId: Int64, sessions: SessionStore, db: Database, text: String, trimmed: String) async {
         if ["<", "⬅", "←", "⭠"].contains(text) {
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminTelegramChangeEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1))
         } else if [">", "➡", "→", "⭢"].contains(text) {
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminTelegramChangeEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
         } else if text == "← Назад" {
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             var session = await sessions.get(chatId) ?? Session()
             session.state = .adminTelegramMenu
             await sessions.set(chatId, session)
@@ -165,6 +172,7 @@ extension BotMenuController {
 
             if let emp = chosen,
                let empId = try? emp.requireID() {
+                await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
                 var session = await sessions.get(chatId) ?? Session()
                 session.selectedEmployeeId = empId
                 session.state = .adminTelegramChangeAwaitForward
@@ -214,17 +222,21 @@ extension BotMenuController {
     private static func handleAdminLinkChoose(app: Application, api: String, chatId: Int64, userId: Int64?, sessions: SessionStore, db: Database, text: String, trimmed: String) async {
         if ["<", "⬅", "←", "⭠"].contains(text) {
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminLinkEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1))
         } else if [">", "➡", "→", "⭢"].contains(text) {
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminLinkEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
         } else if text == "← Назад" {
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await sessions.set(chatId, Session(state: .adminMenu))
             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
         } else {
             let sel = parseEmployeeSelection(trimmed)
             if let emp = try? await Employee.query(on: db).filter(\.$telegramId == nil).filter(\.$fullName == sel.name).first(),
                let empId = try? emp.requireID() {
+                await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
                 var s = await sessions.get(chatId) ?? Session()
                 s.selectedEmployeeId = empId
                 await sessions.set(chatId, s)
@@ -248,7 +260,7 @@ extension BotMenuController {
         await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Отменено.", replyMarkup: KeyboardBuilder.adminTelegramMenu())
     }
 
-    private static func handleAdminTelegramGenerateCode(app: Application, api: String, chatId: Int64, userId: Int64?, sessions: SessionStore, db: Database) async {
+    static func handleAdminTelegramGenerateCode(app: Application, api: String, chatId: Int64, userId: Int64?, sessions: SessionStore, db: Database) async {
         guard let empId = (await sessions.get(chatId))?.selectedEmployeeId, let emp = try? await Employee.find(empId, on: db) else { return }
         try? await PendingLink.query(on: db).filter(\.$employee.$id == empId).filter(\.$isUsed == false).delete()
         var code = ""

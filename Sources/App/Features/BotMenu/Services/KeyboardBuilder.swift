@@ -6,8 +6,14 @@
 //
 
 import Vapor
+import Foundation
 
 enum KeyboardBuilder {
+    struct EmployeeInlineOption {
+        let id: UUID
+        let title: String
+    }
+
     static func mainMenu() -> TgReplyKeyboard {
         TgReplyKeyboard(
             keyboard: [[ .init(text: "Передать спасибо") ]],
@@ -88,6 +94,40 @@ enum KeyboardBuilder {
             resize_keyboard: true,
             one_time_keyboard: false
         )
+    }
+
+    static func employeesInlinePage(
+        options: [EmployeeInlineOption],
+        hasPrev: Bool,
+        hasNext: Bool,
+        page: Int,
+        callbackPrefix: String
+    ) -> TgInlineKeyboardMarkup {
+        var rows: [[TgInlineKeyboardMarkup.Button]] = []
+
+        var i = 0
+        while i < options.count {
+            if i + 1 < options.count {
+                rows.append([
+                    .init(text: options[i].title, callback_data: "\(callbackPrefix):pick:\(options[i].id.uuidString)"),
+                    .init(text: options[i + 1].title, callback_data: "\(callbackPrefix):pick:\(options[i + 1].id.uuidString)")
+                ])
+                i += 2
+            } else {
+                rows.append([
+                    .init(text: options[i].title, callback_data: "\(callbackPrefix):pick:\(options[i].id.uuidString)")
+                ])
+                i += 1
+            }
+        }
+
+        var nav: [TgInlineKeyboardMarkup.Button] = []
+        if hasPrev { nav.append(.init(text: "<", callback_data: "\(callbackPrefix):page:\(page - 1)")) }
+        if hasNext { nav.append(.init(text: ">", callback_data: "\(callbackPrefix):page:\(page + 1)")) }
+        if !nav.isEmpty { rows.append(nav) }
+
+        rows.append([.init(text: "← Назад", callback_data: "\(callbackPrefix):back")])
+        return TgInlineKeyboardMarkup(inline_keyboard: rows)
     }
 
     /// Клавиатура выбора получателя: только «Назад»

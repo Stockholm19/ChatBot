@@ -56,6 +56,7 @@ public struct Session: Codable {
     public var to: String?
     public var page: Int?
     public var chosenEmployeeId: UUID?
+    public var activeInlineListMessageId: Int?
     
     // New fields for Admin Flow
     public var draftFullName: String?
@@ -66,6 +67,7 @@ public struct Session: Codable {
                 to: String? = nil, 
                 page: Int? = nil, 
                 chosenEmployeeId: UUID? = nil,
+                activeInlineListMessageId: Int? = nil,
                 draftFullName: String? = nil,
                 draftTelegramId: Int64? = nil,
                 selectedEmployeeId: UUID? = nil) {
@@ -73,6 +75,7 @@ public struct Session: Codable {
         self.to = to
         self.page = page
         self.chosenEmployeeId = chosenEmployeeId
+        self.activeInlineListMessageId = activeInlineListMessageId
         self.draftFullName = draftFullName
         self.draftTelegramId = draftTelegramId
         self.selectedEmployeeId = selectedEmployeeId

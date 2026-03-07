@@ -55,13 +55,16 @@ extension BotMenuController {
 
         case (.choosingEmployee, "<"), (.choosingEmployee, "⬅"), (.choosingEmployee, "←"), (.choosingEmployee, "⭠"):
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1))
 
         case (.choosingEmployee, ">"), (.choosingEmployee, "➡"), (.choosingEmployee, "→"), (.choosingEmployee, "⭢"):
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
 
         case (.choosingEmployee, "← Назад"):
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await sessions.set(chatId, Session(state: .thanksMenu))
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
@@ -96,6 +99,7 @@ extension BotMenuController {
                             .requireID()
                     }
                     if let sid = senderEmployeeID, sid == empId {
+                        await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
                         await TelegramService.sendMessage(
                             app, api: api, chatId: chatId,
                             text: "Нельзя отправить спасибо самому себе 🙂 Выбери коллегу.",
@@ -105,6 +109,7 @@ extension BotMenuController {
                         return
                     }
                     let currentPage = (await sessions.get(chatId))?.page
+                    await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
                     await sessions.set(chatId, Session(state: .awaitingReason, to: nil, page: currentPage, chosenEmployeeId: empId))
                     await TelegramService.sendMessage(
                         app, api: api, chatId: chatId,
@@ -129,6 +134,7 @@ extension BotMenuController {
                         .requireID()
                 }
                 if let sid = senderEmployeeID, sid == empId {
+                    await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
                     await TelegramService.sendMessage(
                         app, api: api, chatId: chatId,
                         text: "Нельзя отправить спасибо самому себе 🙂 Выбери коллегу.",
@@ -138,6 +144,7 @@ extension BotMenuController {
                     return
                 }
                 let currentPage = (await sessions.get(chatId))?.page
+                await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
                 await sessions.set(chatId, Session(state: .awaitingReason, to: nil, page: currentPage, chosenEmployeeId: empId))
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
@@ -176,6 +183,7 @@ extension BotMenuController {
 
         case (.awaitingReason, "← Назад"):
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page)
 
         case (.awaitingReason, "Отмена"):

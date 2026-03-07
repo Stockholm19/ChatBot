@@ -7,6 +7,7 @@
 
 @testable import App
 import XCTest
+import Foundation
 
 final class KeyboardBuilderTests: XCTestCase {
 
@@ -157,5 +158,29 @@ final class KeyboardBuilderTests: XCTestCase {
         let keyboard = KeyboardBuilder.adminMenu()
         let allTexts = keyboard.keyboard.flatMap { $0.map(\.text) }
         XCTAssertTrue(allTexts.contains("✏️ Редактировать ФИО"))
+    }
+
+    func testEmployeesInlinePageBuildsCallbacks() throws {
+        let id1 = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let id2 = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let keyboard = KeyboardBuilder.employeesInlinePage(
+            options: [
+                .init(id: id1, title: "Аня"),
+                .init(id: id2, title: "Борис")
+            ],
+            hasPrev: true,
+            hasNext: false,
+            page: 1,
+            callbackPrefix: "emp"
+        )
+
+        XCTAssertEqual(keyboard.inline_keyboard.count, 3)
+        XCTAssertEqual(keyboard.inline_keyboard[0].map(\.text), ["Аня", "Борис"])
+        XCTAssertEqual(
+            keyboard.inline_keyboard[0].map(\.callback_data),
+            ["emp:pick:\(id1.uuidString)", "emp:pick:\(id2.uuidString)"]
+        )
+        XCTAssertEqual(keyboard.inline_keyboard[1].map(\.callback_data), ["emp:page:0"])
+        XCTAssertEqual(keyboard.inline_keyboard[2].map(\.callback_data), ["emp:back"])
     }
 }
