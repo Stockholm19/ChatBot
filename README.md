@@ -481,6 +481,38 @@ docker compose -f docker-compose.prod.yml up -d --no-deps --build kudos-bot
 - В `docker-compose.prod.yml` используется `autoheal`: контейнеры с label `autoheal=true`
   автоматически перезапускаются при `unhealthy`.
 
+### Runbook при деградации
+
+Если в Uptime Kuma монитор по `/healthz` ушел в DOWN, используйте короткий чек-лист:
+
+1. Проверить статус контейнеров:
+
+```bash
+cd /apps/kudos-bot
+docker compose -f docker-compose.prod.yml ps
+```
+
+2. Проверить текущий health:
+
+```bash
+curl -i http://127.0.0.1:8080/healthz
+```
+
+3. Посмотреть последние логи бота и autoheal:
+
+```bash
+docker logs --since=15m kudos-bot
+docker logs --since=15m autoheal
+```
+
+4. Если `kudos-bot` нестабилен (частые ошибки polling/рестарты), выполнить ручной перезапуск:
+
+```bash
+docker compose -f docker-compose.prod.yml restart kudos-bot
+```
+
+5. Если недоступен весь VPS (SSH/команды не отвечают), локальный autoheal не сработает — нужен reboot через панель или API VPS-провайдера.
+
 ### Очистка данных в базе
 
 Для полной очистки таблицы благодарностей и сброса счетчика ID используйте команду:
