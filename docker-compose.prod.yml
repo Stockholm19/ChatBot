@@ -18,6 +18,8 @@ services:
   kudos-bot:
     image: ${DOCKER_IMAGE:-helsinki253/kudos-bot}:latest
     container_name: kudos-bot
+    labels:
+      autoheal: "true"
     depends_on:
       db:
         condition: service_healthy
@@ -33,10 +35,21 @@ services:
     volumes:
       - ./exports:/exports
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
       interval: 30s
-      timeout: 3s
-      retries: 5
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: autoheal
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: 10
+      AUTOHEAL_START_PERIOD: 180
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
 volumes:

@@ -10,7 +10,8 @@ import Fluent
 import FluentPostgresDriver
 
 public func configure(_ app: Application) throws {
-    
+        app.pollingHealthStore = PollingHealthStore()
+
         // Определил URL базы данных
         let databaseURL: String
 

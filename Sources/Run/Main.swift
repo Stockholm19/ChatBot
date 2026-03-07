@@ -15,7 +15,10 @@ struct RunApp {
             let sessions = SessionStore()
 
             // Запускаем фоновую задачу для обработки сообщений Telegram
-            Task { await TelegramService.poll(app: app, sessions: sessions) }
+            Task {
+                await app.pollingHealthStore.markPollingTaskStarted()
+                await TelegramService.poll(app: app, sessions: sessions)
+            }
 
             // Запуск HTTP-сервера Vapor
             try await app.execute()

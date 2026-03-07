@@ -7,7 +7,7 @@
 
 import Vapor
 import Fluent
-import SQLKit   //нужно для прямого SQL-запроса
+import SQLKit
 
 public func routes(_ app: Application) throws {
     try app.kudosRoutes()
@@ -16,18 +16,7 @@ public func routes(_ app: Application) throws {
     // Простой healthcheck (для Docker/Load Balancer)
     app.get("health") { _ in "ok" }
 
-    // Расширенный healthcheck для Uptime Kuma: проверка HTTP + БД
-    //
-    // Возвращает JSON вида:
-    // {
-    //   "status": "ok" | "degraded",
-    //   "db": "up" | "down",
-    //   "env": "<dev|prod|...>"
-    // }
-    //
-    // Код ответа:
-    //  - 200 OK, если БД “up”
-    //  - 503 Service Unavailable, если БД “down” или SQL недоступен
+    // Расширенный healthcheck: HTTP + БД + состояние Telegram polling-loop.
     app.get("healthz") { req async throws -> Response in
         var dbOK = false
 
@@ -45,16 +34,75 @@ public func routes(_ app: Application) throws {
             dbOK = false
         }
 
-        let payload: [String: String] = [
-            "status": dbOK ? "ok" : "degraded",
-            "db": dbOK ? "up" : "down",
-            "env": req.application.environment.name
-        ]
+        let staleSeconds = healthEnvInt(name: "POLLING_STALE_SECONDS", defaultValue: 120)
+        let startupGraceSeconds = healthEnvInt(name: "HEALTH_STARTUP_GRACE_SECONDS", defaultValue: 120)
 
-        let res = Response(status: dbOK ? .ok : .serviceUnavailable)
+        let pollingSnapshot = await req.application.pollingHealthStore.snapshot()
+        let now = Date()
+        let startupGraceActive = now.timeIntervalSince(pollingSnapshot.startedAt) < Double(startupGraceSeconds)
+
+        let pollLagSec = pollingSnapshot.lastSuccessfulPollAt.map {
+            max(0, Int(now.timeIntervalSince($0)))
+        }
+
+        let pollingOK: Bool
+        if let pollLagSec {
+            pollingOK = pollLagSec <= staleSeconds
+        } else {
+            pollingOK = startupGraceActive
+        }
+
+        let payload = HealthzPayload(
+            status: (dbOK && pollingOK) ? "ok" : "degraded",
+            db: dbOK ? "up" : "down",
+            telegramPolling: pollingOK ? "up" : "down",
+            pollLagSec: pollLagSec,
+            startupGraceActive: startupGraceActive,
+            lastPollOkAt: pollingSnapshot.lastSuccessfulPollAt.map(healthDateString),
+            lastPollError: pollingSnapshot.lastErrorMessage,
+            env: req.application.environment.name
+        )
+
+        let isHealthy = dbOK && pollingOK
+        let res = Response(status: isHealthy ? .ok : .serviceUnavailable)
         try res.content.encode(payload, as: .json)
         return res
     }
+}
+
+private struct HealthzPayload: Content {
+    let status: String
+    let db: String
+    let telegramPolling: String
+    let pollLagSec: Int?
+    let startupGraceActive: Bool
+    let lastPollOkAt: String?
+    let lastPollError: String?
+    let env: String
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case db
+        case telegramPolling = "telegram_polling"
+        case pollLagSec = "poll_lag_sec"
+        case startupGraceActive = "startup_grace_active"
+        case lastPollOkAt = "last_poll_ok_at"
+        case lastPollError = "last_poll_error"
+        case env
+    }
+}
+
+private func healthEnvInt(name: String, defaultValue: Int) -> Int {
+    guard let raw = Environment.get(name), let value = Int(raw), value > 0 else {
+        return defaultValue
+    }
+    return value
+}
+
+private func healthDateString(_ date: Date) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: date)
 }
 
 // MARK: - Feature routes stubs

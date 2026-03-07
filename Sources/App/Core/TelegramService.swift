@@ -29,6 +29,7 @@ public enum TelegramService {
     public static func poll(app: Application, sessions: SessionStore) async {
         guard let token = Environment.get("BOT_TOKEN") else {
             app.logger.critical("BOT_TOKEN is not set")
+            await app.pollingHealthStore.markPollError("BOT_TOKEN is not set")
             return
         }
         let api = "https://api.telegram.org/bot\(token)"
@@ -41,6 +42,7 @@ public enum TelegramService {
 
                 let res = try await app.client.get(url)
                 let payload = try res.content.decode(TgResp<[TgUpdate]>.self)
+                await app.pollingHealthStore.markSuccessfulPoll()
 
                 for u in payload.result {
                     offset = u.update_id + 1
@@ -50,6 +52,7 @@ public enum TelegramService {
                 }
             } catch {
                 app.logger.warning("poll error: \(error.localizedDescription)")
+                await app.pollingHealthStore.markPollError(error.localizedDescription)
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }

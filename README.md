@@ -384,6 +384,10 @@ docker compose logs -f
   # По умолчанию выключено. Не обновляет и не удаляет существующих.
   # EMPLOYEES_CSV_IMPORT_ON_BOOT=1
 
+  # Опционально: пороги healthz для Telegram polling
+  # POLLING_STALE_SECONDS=120
+  # HEALTH_STARTUP_GRACE_SECONDS=120
+
   ```
 
 - Для запуска на VPS:
@@ -440,22 +444,42 @@ docker compose -f docker-compose.prod.yml up -d --no-deps --build kudos-bot
 
 ### Мониторинг и healthcheck
 
-- Эндпоинт `/health` возвращает HTTP 200 OK при успешной работе приложения.
-- Используется для проверки статуса контейнера в Docker Compose и внешнего мониторинга.
-- Пример команды проверки:
+- Эндпоинт `/health` — простой liveness-check (приложение поднято и отвечает HTTP).
+- Эндпоинт `/healthz` — расширенный healthcheck для продового мониторинга.
+  Проверяет:
+  - доступность БД,
+  - живость Telegram polling-loop.
+- `/healthz` возвращает:
+  - HTTP `200`, если БД и polling в норме;
+  - HTTP `503`, если есть деградация.
+
+- Примеры проверки:
 
   ```bash
   curl -i http://127.0.0.1:8080/health
+  curl -i http://127.0.0.1:8080/healthz
   ```
 
 - Настройка мониторинга (например, Uptime Kuma):
 
   - Тип: HTTP(s)
-  - URL: `http://<IP_VPS>:8080/health`
+  - URL: `http://<IP_VPS>:8080/healthz`
   - Метод: GET
   - Интервал: 60 секунд
-  - Допустимые коды: 200–299
+  - Таймаут: 10–15 секунд
+  - Попытки: 2–3
+  - Допустимые коды: только `200`
   - Авторизация: отсутствует
+
+- Пороговые параметры (опционально через `.env`):
+
+  ```env
+  POLLING_STALE_SECONDS=120
+  HEALTH_STARTUP_GRACE_SECONDS=120
+  ```
+
+- В `docker-compose.prod.yml` используется `autoheal`: контейнеры с label `autoheal=true`
+  автоматически перезапускаются при `unhealthy`.
 
 ### Очистка данных в базе
 
