@@ -188,6 +188,22 @@ public enum TelegramService {
         text: String,
         inlineMarkup: TgInlineKeyboardMarkup
     ) async {
+        _ = await sendInlineMessage(
+            app,
+            api: api,
+            chatId: chatId,
+            text: text,
+            inlineMarkup: inlineMarkup
+        )
+    }
+
+    static func sendInlineMessage(
+        _ app: Application,
+        api: String,
+        chatId: Int64,
+        text: String,
+        inlineMarkup: TgInlineKeyboardMarkup
+    ) async -> Int? {
         let payload = SendInlineMessagePayload(
             chat_id: chatId,
             text: text,
@@ -195,11 +211,14 @@ public enum TelegramService {
             reply_markup: inlineMarkup
         )
         do {
-            _ = try await app.client.post("\(api)/sendMessage") { req in
+            let res = try await app.client.post("\(api)/sendMessage") { req in
                 try req.content.encode(payload, as: .json)
             }
+            let response = try res.content.decode(TgResp<TgMessage>.self)
+            return response.result.message_id
         } catch {
             app.logger.error("sendMessage(inline) failed: \(error.localizedDescription)")
+            return nil
         }
     }
 

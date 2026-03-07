@@ -295,6 +295,7 @@ extension BotMenuController {
 
         var session = await sessions.get(chatId) ?? Session()
         session.selectedEmployeeId = employeeId
+        session.activeInlineListMessageId = nil
         await sessions.set(chatId, session)
 
         await TelegramService.answerCallbackQuery(app, api: api, callbackQueryId: query.id)

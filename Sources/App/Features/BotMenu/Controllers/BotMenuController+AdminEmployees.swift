@@ -286,17 +286,21 @@ extension BotMenuController {
     private static func handleAdminDeactivateChoose(app: Application, api: String, chatId: Int64, sessions: SessionStore, db: Database, text: String, trimmed: String) async {
         if ["<", "⬅", "←", "⭠"].contains(text) {
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1), active: true, targetState: .adminDeactivateChoose)
         } else if [">", "➡", "→", "⭢"].contains(text) {
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1, active: true, targetState: .adminDeactivateChoose)
         } else if text == "← Назад" {
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await sessions.set(chatId, Session(state: .adminMenu))
             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
         } else {
             let sel = parseEmployeeSelection(trimmed)
             if let emp = try? await Employee.query(on: db).filter(\.$fullName == sel.name).filter(\.$isActive == true).first(),
                let eid = try? emp.requireID() {
+                await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
                 var sess = await sessions.get(chatId) ?? Session()
                 sess.selectedEmployeeId = eid
                 sess.state = .adminDeactivateConfirm
@@ -309,11 +313,14 @@ extension BotMenuController {
     private static func handleAdminEditNameChoose(app: Application, api: String, chatId: Int64, sessions: SessionStore, db: Database, text: String, trimmed: String) async {
         if ["<", "⬅", "←", "⭠"].contains(text) {
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminEditNameEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1))
         } else if [">", "➡", "→", "⭢"].contains(text) {
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminEditNameEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
         } else if text == "← Назад" {
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             var session = await sessions.get(chatId) ?? Session()
             session.state = .adminMenu
             session.selectedEmployeeId = nil
@@ -341,6 +348,7 @@ extension BotMenuController {
 
             guard let emp = chosen, let empId = try? emp.requireID() else { return }
 
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             var session = await sessions.get(chatId) ?? Session()
             session.selectedEmployeeId = empId
             session.draftFullName = nil
@@ -360,6 +368,7 @@ extension BotMenuController {
     private static func handleAdminEditNameAsk(app: Application, api: String, chatId: Int64, sessions: SessionStore, db: Database, text: String, trimmed: String) async {
         if text == "← Назад" {
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminEditNameEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page)
             return
         }
@@ -456,17 +465,21 @@ extension BotMenuController {
     private static func handleAdminArchiveChoose(app: Application, api: String, chatId: Int64, sessions: SessionStore, db: Database, text: String, trimmed: String) async {
         if ["<", "⬅", "←", "⭠"].contains(text) {
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1), active: false, targetState: .adminArchiveChoose)
         } else if [">", "➡", "→", "⭢"].contains(text) {
             let page = (await sessions.get(chatId))?.page ?? 0
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1, active: false, targetState: .adminArchiveChoose)
         } else if text == "← Назад" {
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await sessions.set(chatId, Session(state: .adminMenu))
             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
         } else {
             let sel = parseEmployeeSelection(trimmed)
             if let emp = try? await Employee.query(on: db).filter(\.$fullName == sel.name).filter(\.$isActive == false).first(),
                let eid = try? emp.requireID() {
+                await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
                 var sess = await sessions.get(chatId) ?? Session()
                 sess.selectedEmployeeId = eid
                 sess.state = .adminArchiveActions

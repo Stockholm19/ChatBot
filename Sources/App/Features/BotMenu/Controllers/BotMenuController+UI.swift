@@ -75,7 +75,7 @@ extension BotMenuController {
             return .init(id: id, title: data.titleById[id] ?? emp.fullName)
         }
 
-        let text = "Кому сказать спасибо? (стр. \(data.page + 1)/\(data.totalPages))"
+        let text = "Выберите сотрудника для благодарности: (стр. \(data.page + 1)/\(data.totalPages))"
         let keyboard = KeyboardBuilder.employeesInlinePage(
             options: inlineOptions,
             hasPrev: data.page > 0,
@@ -84,7 +84,7 @@ extension BotMenuController {
             callbackPrefix: "emp"
         )
 
-        await sendOrEditInlineEmployeesList(
+        let activeMessageId = await sendOrEditInlineEmployeesList(
             app: app,
             api: api,
             chatId: chatId,
@@ -93,7 +93,11 @@ extension BotMenuController {
             editMessageId: editMessageId
         )
 
-        await sessions.set(chatId, Session(state: .choosingEmployee, page: data.page))
+        var session = await sessions.get(chatId) ?? Session()
+        session.state = .choosingEmployee
+        session.page = data.page
+        session.activeInlineListMessageId = activeMessageId
+        await sessions.set(chatId, session)
     }
 
     static func loadActiveEmployeesPage(db: Database, page: Int) async -> (all: [Employee], slice: ArraySlice<Employee>, titleById: [UUID: String], page: Int, totalPages: Int) {
@@ -137,7 +141,7 @@ extension BotMenuController {
         text: String,
         inlineMarkup: TgInlineKeyboardMarkup,
         editMessageId: Int?
-    ) async {
+    ) async -> Int? {
         if let editMessageId {
             await TelegramService.editMessageText(
                 app,
@@ -147,7 +151,7 @@ extension BotMenuController {
                 text: text,
                 inlineMarkup: inlineMarkup
             )
-            return
+            return editMessageId
         }
 
         await TelegramService.hideReplyKeyboardSilently(
@@ -156,13 +160,36 @@ extension BotMenuController {
             chatId: chatId
         )
 
-        await TelegramService.sendMessage(
+        return await TelegramService.sendInlineMessage(
             app,
             api: api,
             chatId: chatId,
             text: text,
             inlineMarkup: inlineMarkup
         )
+    }
+
+    static func closeActiveInlineList(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        sessions: SessionStore
+    ) async {
+        guard var session = await sessions.get(chatId),
+              let messageId = session.activeInlineListMessageId else {
+            return
+        }
+
+        await TelegramService.editMessageReplyMarkup(
+            app,
+            api: api,
+            chatId: chatId,
+            messageId: messageId,
+            inlineMarkup: nil
+        )
+
+        session.activeInlineListMessageId = nil
+        await sessions.set(chatId, session)
     }
 
     /// Показывает страницу сотрудников (активных или архивных) для админа
@@ -194,7 +221,7 @@ extension BotMenuController {
             : "Кого вернуть из архива? (стр. \(data.page + 1)/\(data.totalPages))"
         let callbackPrefix = targetState == .adminDeactivateChoose ? "adm:deact" : "adm:arch"
 
-        await sendAdminInlineList(
+        let activeMessageId = await sendAdminInlineList(
             app: app,
             api: api,
             chatId: chatId,
@@ -207,6 +234,7 @@ extension BotMenuController {
         var session = await sessions.get(chatId) ?? Session()
         session.state = targetState
         session.page = data.page
+        session.activeInlineListMessageId = activeMessageId
         await sessions.set(chatId, session)
     }
 
@@ -225,7 +253,7 @@ extension BotMenuController {
             .all()) ?? []
 
         let data = employeePageData(all: all, page: page)
-        await sendAdminInlineList(
+        let activeMessageId = await sendAdminInlineList(
             app: app,
             api: api,
             chatId: chatId,
@@ -238,6 +266,7 @@ extension BotMenuController {
         var session = await sessions.get(chatId) ?? Session()
         session.state = .adminLinkChoose
         session.page = data.page
+        session.activeInlineListMessageId = activeMessageId
         await sessions.set(chatId, session)
     }
 
@@ -255,7 +284,7 @@ extension BotMenuController {
             .all()) ?? []
 
         let data = employeePageData(all: all, page: page)
-        await sendAdminInlineList(
+        let activeMessageId = await sendAdminInlineList(
             app: app,
             api: api,
             chatId: chatId,
@@ -268,6 +297,7 @@ extension BotMenuController {
         var session = await sessions.get(chatId) ?? Session()
         session.state = .adminEditNameChoose
         session.page = data.page
+        session.activeInlineListMessageId = activeMessageId
         await sessions.set(chatId, session)
     }
 
@@ -286,7 +316,7 @@ extension BotMenuController {
             .all()) ?? []
 
         let data = employeePageData(all: all, page: page)
-        await sendAdminInlineList(
+        let activeMessageId = await sendAdminInlineList(
             app: app,
             api: api,
             chatId: chatId,
@@ -299,6 +329,7 @@ extension BotMenuController {
         var session = await sessions.get(chatId) ?? Session()
         session.state = .adminTelegramBindChoose
         session.page = data.page
+        session.activeInlineListMessageId = activeMessageId
         await sessions.set(chatId, session)
     }
 
@@ -318,7 +349,7 @@ extension BotMenuController {
             .all()) ?? []
 
         let data = employeePageData(all: all, page: page)
-        await sendAdminInlineList(
+        let activeMessageId = await sendAdminInlineList(
             app: app,
             api: api,
             chatId: chatId,
@@ -331,6 +362,7 @@ extension BotMenuController {
         var session = await sessions.get(chatId) ?? Session()
         session.state = .adminTelegramChangeChoose
         session.page = data.page
+        session.activeInlineListMessageId = activeMessageId
         await sessions.set(chatId, session)
     }
 
@@ -370,7 +402,7 @@ extension BotMenuController {
         data: (slice: ArraySlice<Employee>, titleById: [UUID: String], page: Int, totalPages: Int),
         callbackPrefix: String,
         editMessageId: Int?
-    ) async {
+    ) async -> Int? {
         let options = data.slice.compactMap { emp -> KeyboardBuilder.EmployeeInlineOption? in
             guard let id = try? emp.requireID() else { return nil }
             return .init(id: id, title: data.titleById[id] ?? emp.fullName)
@@ -382,7 +414,7 @@ extension BotMenuController {
             page: data.page,
             callbackPrefix: callbackPrefix
         )
-        await sendOrEditInlineEmployeesList(
+        return await sendOrEditInlineEmployeesList(
             app: app,
             api: api,
             chatId: chatId,

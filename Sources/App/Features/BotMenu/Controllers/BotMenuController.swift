@@ -107,6 +107,7 @@ enum BotMenuController {
             
         // Глобальная обработка возврата к списку сотрудников (как в оригинале)
         if t == "← Назад к списку" {
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             let page = session.page ?? 0
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page)
             return
