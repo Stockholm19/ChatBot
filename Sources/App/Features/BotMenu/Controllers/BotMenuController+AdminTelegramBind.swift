@@ -68,6 +68,9 @@ extension BotMenuController {
             let page = (await sessions.get(chatId))?.page ?? 0
             await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showAdminTelegramBindEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
+        } else if text == "Отмена" {
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
+            await handleAdminTelegramBindCancel(app: app, api: api, chatId: chatId, sessions: sessions, db: db)
         } else if text == "← Назад" {
             await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             var session = await sessions.get(chatId) ?? Session()
@@ -270,7 +273,7 @@ extension BotMenuController {
             if existing == nil { code = c; break }
         }
         guard !code.isEmpty else { return }
-        try? await PendingLink(code: code, employeeId: empId, createdByAdminTgId: userId, expiresAt: Date().addingTimeInterval(15*60)).save(on: db)
+        try? await PendingLink(code: code, employeeId: empId, createdByAdminTgId: userId, expiresAt: Date().addingTimeInterval(6*3600)).save(on: db)
         let msg = """
         Код для <b>\(emp.fullName)</b>:
         <code>/link \(code)</code>
@@ -279,7 +282,7 @@ extension BotMenuController {
         1) Открыть чат с ботом
         2) Нажать на команду выше (или скопировать) и отправить
 
-        Код действует 15 минут.
+        Код действует 6 часов.
         """
         let currentState = (await sessions.get(chatId))?.state
         let kb: TgReplyKeyboard = (currentState == .adminTelegramChangeAwaitForward)

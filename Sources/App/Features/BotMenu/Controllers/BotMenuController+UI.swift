@@ -209,6 +209,8 @@ extension BotMenuController {
 
         if active && targetState == .adminDeactivateChoose {
             q.filter(\.$telegramId != nil)
+        } else if !active && targetState == .adminArchiveChoose {
+            q.filter(\.$telegramId != nil)
         }
 
         let all = (try? await q

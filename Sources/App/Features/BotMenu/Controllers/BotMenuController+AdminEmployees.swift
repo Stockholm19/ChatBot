@@ -231,7 +231,7 @@ extension BotMenuController {
                 .first()
             let emp: Employee
             if let existing { emp = existing } else {
-                let newEmp = Employee(fullName: name, isActive: true)
+                let newEmp = Employee(fullName: name, isActive: false)
                 try await newEmp.save(on: db)
                 emp = newEmp
             }
@@ -247,7 +247,7 @@ extension BotMenuController {
                 }
             }
             guard success else { return }
-            let pending = PendingLink(code: code, employeeId: empId, createdByAdminTgId: userId, expiresAt: Date().addingTimeInterval(15 * 60))
+            let pending = PendingLink(code: code, employeeId: empId, createdByAdminTgId: userId, expiresAt: Date().addingTimeInterval(6 * 3600))
             try await pending.save(on: db)
             let msg = """
             Сотрудник <b>\(name)</b> создан! ✅
@@ -259,7 +259,7 @@ extension BotMenuController {
             1) Открыть чат с ботом
             2) Нажать на команду выше (или скопировать) и отправить
 
-            Код действует 15 минут.
+            Код действует 6 часов.
             """
             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: msg, replyMarkup: KeyboardBuilder.adminMenu())
             await sessions.set(chatId, Session(state: .adminMenu))

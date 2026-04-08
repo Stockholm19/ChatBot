@@ -225,6 +225,7 @@ enum BotController {
                 }
 
                 empInTx.telegramId = fromId
+                empInTx.isActive = true
                 try await empInTx.save(on: tx)
 
                 pendingInTx.isUsed = true
