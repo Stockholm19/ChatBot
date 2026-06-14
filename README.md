@@ -262,7 +262,23 @@ ChatBot/
   - переменная `REMINDER_TIMES` — список времени в формате `HH:mm` через запятую.
   - Пример: `REMINDER_TIMES=10:00,15:30,19:00`.
 
-Если `REMINDER_TIMES` не задана или пуста, напоминания просто не запускаются.
+Если `REMINDER_TIMES` не задана или пуста, напоминания просто не запускаются. То же самое, если закомментировать строку в `.env` через `#`.
+
+> ⚠️ **Важно при изменении `.env` на VPS.** Файл `.env` подключается через `env_file` и читается только в момент **создания** контейнера. Просто сохранить `.env` и перезагрузить VPS (или сделать `restart`) **недостаточно** — Docker поднимет старый контейнер со старыми переменными. Чтобы изменения применились, контейнер нужно **пересоздать**:
+>
+> ```bash
+> cd /apps/kudos-bot
+> docker compose -f docker-compose.prod.yml up -d --force-recreate kudos-bot
+> ```
+>
+> Проверить, что напоминания выключились:
+>
+> ```bash
+> docker compose -f docker-compose.prod.yml logs --tail=30 kudos-bot | grep -i remind
+> # ожидаем: RemindersScheduler: REMINDER_TIMES not set or empty, skipping reminders.
+> ```
+>
+> Команда трогает только контейнер `kudos-bot`; база (`db`) и `autoheal` не затрагиваются. Не используйте `down -v` — это удалит том с базой.
 
 ---
 
