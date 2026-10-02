@@ -25,10 +25,25 @@ if [ ! -f .env ]; then
 fi
 
 echo "⬇️  Скачиваю свежий образ…"
-docker compose -f "${COMPOSE_FILE}" pull kudos-bot
+# Сеть через домашний прокси иногда рвёт соединение — пробуем несколько раз
+pulled=false
+for attempt in 1 2 3 4 5; do
+  if docker compose -f "${COMPOSE_FILE}" pull kudos-bot; then
+    pulled=true
+    break
+  fi
+  echo "   попытка ${attempt} не удалась, повторю через 5 секунд…"
+  sleep 5
+done
+if [ "${pulled}" != true ]; then
+  echo "⚠️  Не удалось скачать образ — запускаю с тем, что уже есть локально." >&2
+fi
+
+echo "🗄  Проверяю базу и autoheal (при первом запуске — создаю)…"
+docker compose -f "${COMPOSE_FILE}" up -d db autoheal
 
 echo "🔁 Пересоздаю контейнер бота (подхватит и новый .env)…"
-docker compose -f "${COMPOSE_FILE}" up -d --force-recreate kudos-bot
+docker compose -f "${COMPOSE_FILE}" up -d --force-recreate --no-deps kudos-bot
 
 echo "🧹 Удаляю старые образы…"
 docker image prune -f > /dev/null
