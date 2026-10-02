@@ -1,13 +1,14 @@
-name: Build & Deploy
+name: Test & Build Image
 
 on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
 
+# Деплой на домашний сервер выполняется вручную: Scripts/update.sh (см. README → «Обновление на сервере»)
+
 env:
   DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
-  VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
 
 jobs:
   # --- 1. ЭТАП ТЕСТИРОВАНИЯ ---
@@ -49,13 +50,7 @@ jobs:
   build-and-push:
     needs: test # <--- ВАЖНО: Ждем успеха тестов
     runs-on: ubuntu-latest
-    outputs:
-      build_duration: ${{ steps.build_duration.outputs.duration }}
     steps:
-      - name: Mark build start time
-        id: bt0
-        run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -82,87 +77,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Calculate build duration
-        id: build_duration
-        run: echo "duration=$(( $(date +%s) - ${{ steps.bt0.outputs.start }} ))" >> $GITHUB_OUTPUT
-
-  # --- 3. ЭТАП ДЕПЛОЯ ---
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    steps:
-      - name: Mark start time
-        id: t0
-        run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Copy docker-compose.prod.yml to VPS
-        uses: appleboy/scp-action@v0.1.5
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          source: "docker-compose.prod.yml"
-          target: "${{ secrets.VPS_APP_DIR }}"
-
-      - name: SSH to VPS and deploy
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          envs: DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,VPS_APP_DIR,DOCKER_IMAGE
-          script: |
-            set -euo pipefail
-
-            APP_DIR="${VPS_APP_DIR}"
-            mkdir -p "${APP_DIR}" && cd "${APP_DIR}"
-
-            if [ ! -f .env ]; then
-              echo "ERROR: ${APP_DIR}/.env is missing." >&2
-              exit 1
-            fi
-
-            echo "🔐 Docker Hub login on VPS…"
-            echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
-
-            echo "⬇️ Pull & Up…"
-            docker compose -f docker-compose.prod.yml pull || true
-            docker compose -f docker-compose.prod.yml up -d
-
-            echo "🧹 Prune…"
-            docker image prune -f
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
-          DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
-
-      - name: Calculate deploy duration
-        id: duration
-        run: echo "duration=$(( $(date +%s) - ${{ steps.t0.outputs.start_time }} ))" >> $GITHUB_OUTPUT
-
-      - name: Calculate total duration
-        id: total
-        env:
-          BUILD_DUR: ${{ needs.build-and-push.outputs.build_duration }}
-          DEPLOY_DUR: ${{ steps.duration.outputs.duration }}
-        run: echo "total=$(( BUILD_DUR + DEPLOY_DUR ))" >> $GITHUB_OUTPUT
-
-      - name: Notify Telegram (success)
+      - name: Notify Telegram (image ready)
         if: success()
         run: |
           REPO="${GITHUB_REPOSITORY}"
           SHA_SHORT="${GITHUB_SHA::7}"
           RUN_URL="https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID}"
-          IMG_TAG="${{ env.DOCKER_IMAGE }}:${GITHUB_SHA}"
 
-          TEXT="<b>✅ Deploy success</b>%0A\
-          Repo: <code>${REPO}</code>%0A\
+          TEXT="<b>📦 Новый образ готов</b>%0A\
           Commit: <code>${SHA_SHORT}</code>%0A\
-          Image: <code>${IMG_TAG}</code>%0A\
+          Обнови на сервере: <code>./Scripts/update.sh</code>%0A\
           <a href=\"${RUN_URL}\">Open workflow run</a>"
 
           curl -sS -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
@@ -177,8 +101,7 @@ jobs:
           SHA_SHORT="${GITHUB_SHA::7}"
           RUN_URL="https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID}"
 
-          TEXT="<b>❌ Deploy failed</b>%0A\
-          Repo: <code>${REPO}</code>%0A\
+          TEXT="<b>❌ Сборка образа упала</b>%0A\
           Commit: <code>${SHA_SHORT}</code>%0A\
           <a href=\"${RUN_URL}\">Open workflow run</a>"
 

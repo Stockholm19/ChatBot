@@ -23,8 +23,8 @@
 - **База данных:** PostgreSQL  
 - **Архитектура:** feature-folder (BotMenu, Employees, Kudos, Reminders, Core)  
 - **Контейнеризация:** Docker + Docker Compose  
-- **Продакшен:** VPS (Ubuntu), деплой через Docker  
-- **CI/CD:** GitHub Actions (тесты → сборка Docker-образа → деплой на сервер)  
+- **Продакшен:** домашний сервер (Ubuntu), Docker Compose, обновление вручную через `Scripts/update.sh`  
+- **CI/CD:** GitHub Actions (тесты → сборка Docker-образа → уведомление в Telegram)  
 - **Тестовая среда:** отдельная тестовая БД (`kudos_test`) + unit/integration тесты  
 
 
@@ -77,7 +77,8 @@ ChatBot/
 │   └── Screenshots2
 │
 ├── Scripts/                        # Вспомогательные скрипты (обычно для VPS)
-│   └── sync_employees.sql          # Safe-sync участников по telegram_id
+│   ├── sync_employees.sql          # Safe-sync участников по telegram_id
+│   └── update.sh                   # Обновление бота на сервере до свежего образа
 │
 ├── Sources/
 │   ├── App/                        # Основное приложение Vapor
@@ -466,10 +467,31 @@ docker compose -f docker-compose.prod.yml up -d --no-deps --build kudos-bot
 
 ### CI/CD
 
-- Автоматическая сборка и пуш Docker-образа в Docker Hub при пуше в ветку `main`.
-- Теги образа: `latest` и SHA коммита.
-- SSH-доступ к VPS для обновления контейнеров через `docker compose pull && docker compose up -d`.
-- Пайплайн настроен в `.github/workflows/deploy.yml`.
+Пайплайн `.github/workflows/deploy.yml` при пуше в `main`:
+
+1. прогоняет тесты на одноразовой базе `kudos_test`;
+2. собирает Docker-образ и пушит его в Docker Hub с тегами `latest` и SHA коммита;
+3. присылает в Telegram сообщение «📦 Новый образ готов» (секреты `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`).
+
+Автодеплоя нет: домашний сервер находится за роутером, и GitHub к нему не подключается.
+
+### Обновление на сервере
+
+После сообщения о новом образе на сервере выполнить:
+
+```bash
+cd /путь/к/боту
+./Scripts/update.sh
+```
+
+Скрипт скачивает свежий образ, пересоздаёт контейнер `kudos-bot` (подхватывая новый `.env`), чистит старые образы
+и ждёт ответа `/healthz`. Базу данных он не трогает, миграции применяются автоматически при старте бота.
+
+Если на сервере лежат только `docker-compose.prod.yml` и `.env` без клона репозитория, скопируйте `Scripts/update.sh`
+рядом с ними и запускайте как `bash update.sh`.
+
+Откатиться на конкретную версию можно, указав тег из Docker Hub в `docker-compose.prod.yml`
+(например `helsinki253/kudos-bot:<sha>`) и выполнив `docker compose -f docker-compose.prod.yml up -d kudos-bot`.
 
 ### Мониторинг и healthcheck
 
