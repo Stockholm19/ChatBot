@@ -7,7 +7,47 @@ import Vapor
 import Fluent
 
 extension BotMenuController {
-    
+
+    /// Точка входа в сценарий «Сказать спасибо».
+    /// Если получатель может быть только один — пропускаем выбор и сразу просим текст.
+    static func startThanksFlow(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        userId: Int64?,
+        sessions: SessionStore,
+        db: Database,
+        isUserAdmin: Bool
+    ) async {
+        let participants = (try? await FluentEmployeesRepo(db: db).activeLinked()) ?? []
+        let recipients = participants.filter { $0.telegramId != userId }
+
+        if recipients.isEmpty {
+            let hint = isUserAdmin ? "\nДобавить участника можно в ⚙️ Настройках." : ""
+            await showMainMenu(
+                app: app, api: api, chatId: chatId, sessions: sessions, isUserAdmin: isUserAdmin,
+                text: "Пока некому сказать спасибо — других участников ещё нет.\(hint)"
+            )
+            return
+        }
+
+        if recipients.count == 1, let recipient = recipients.first, let recipientId = recipient.id {
+            await sessions.set(chatId, Session(state: .awaitingReason, page: nil, chosenEmployeeId: recipientId))
+            await askForReason(app: app, api: api, chatId: chatId, recipientName: recipient.fullName, canGoBack: false)
+            return
+        }
+
+        await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0)
+    }
+
+    static func askForReason(app: Application, api: String, chatId: Int64, recipientName: String, canGoBack: Bool) async {
+        await TelegramService.sendMessage(
+            app, api: api, chatId: chatId,
+            text: "Напиши, за что спасибо — <b>\(recipientName.htmlEscaped)</b> получит это сообщение 💌",
+            replyMarkup: KeyboardBuilder.reasonMenu(showBack: canGoBack)
+        )
+    }
+
     static func handleThanksFlow(
         app: Application,
         api: String,
@@ -23,262 +63,187 @@ extension BotMenuController {
     ) async {
         let trimmed = message.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let session = await sessions.get(chatId) ?? Session()
-        let currentTo = session.to
 
         switch (state, text) {
-        case (.thanksMenu, "Сказать «спасибо»"):
-            await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: 0)
-
-        case (.thanksMenu, "← Назад"):
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Главное меню:",
-                replyMarkup: KeyboardBuilder.mainMenu()
-            )
-            await sessions.set(chatId, Session(state: .mainMenu))
-
-        case (.thanksMenu, "Статистика"):
-            await sessions.set(chatId, Session(state: .statisticsMenu))
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Статистика:",
-                replyMarkup: KeyboardBuilder.statisticsMenu()
-            )
-        
-        case (.thanksMenu, let t) where isUserAdmin && t.contains("Админ"):
-            await sessions.set(chatId, Session(state: .adminMenu))
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Админка:",
-                replyMarkup: KeyboardBuilder.adminMenu()
-            )
-
         case (.choosingEmployee, "<"), (.choosingEmployee, "⬅"), (.choosingEmployee, "←"), (.choosingEmployee, "⭠"):
-            let page = (await sessions.get(chatId))?.page ?? 0
+            let page = session.page ?? 0
             await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: max(0, page - 1))
 
         case (.choosingEmployee, ">"), (.choosingEmployee, "➡"), (.choosingEmployee, "→"), (.choosingEmployee, "⭢"):
-            let page = (await sessions.get(chatId))?.page ?? 0
+            let page = session.page ?? 0
             await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page + 1)
 
         case (.choosingEmployee, "← Назад"):
             await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
-            await sessions.set(chatId, Session(state: .thanksMenu))
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Меню благодарностей:",
-                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isUserAdmin)
-            )
+            await showMainMenu(app: app, api: api, chatId: chatId, sessions: sessions, isUserAdmin: isUserAdmin)
 
         case (.choosingEmployee, _):
-            let input = trimmed
-            let sel = parseEmployeeSelection(input)
-            if let idx = sel.index {
-                let candidates = (try? await Employee.query(on: db)
-                    .filter(\.$isActive == true)
-                    .filter(\.$telegramId != nil)
-                    .filter(\.$fullName == sel.name)
-                    .all()) ?? []
-                
-                let sortedCandidates = candidates.sorted { a, b in
-                    let aId = (try? a.requireID())?.uuidString ?? ""
-                    let bId = (try? b.requireID())?.uuidString ?? ""
-                    return aId < bId
-                }
-                
-                if idx >= 1, idx <= sortedCandidates.count,
-                   let empId = try? sortedCandidates[idx - 1].requireID() {
-                    let emp = sortedCandidates[idx - 1]
-                    var senderEmployeeID: UUID? = nil
-                    if let tg = userId {
-                        senderEmployeeID = try? await Employee.query(on: db)
-                            .filter(\.$telegramId == tg)
-                            .first()?
-                            .requireID()
-                    }
-                    if let sid = senderEmployeeID, sid == empId {
-                        await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
-                        await TelegramService.sendMessage(
-                            app, api: api, chatId: chatId,
-                            text: "Нельзя отправить спасибо самому себе 🙂 Выбери коллегу.",
-                            replyMarkup: KeyboardBuilder.backToEmployeesList()
-                        )
-                        await sessions.set(chatId, Session(state: .choosingEmployee, to: nil, page: (await sessions.get(chatId))?.page))
-                        return
-                    }
-                    let currentPage = (await sessions.get(chatId))?.page
-                    await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
-                    await sessions.set(chatId, Session(state: .awaitingReason, to: nil, page: currentPage, chosenEmployeeId: empId))
-                    await TelegramService.sendMessage(
-                        app, api: api, chatId: chatId,
-                        text: "Напиши короткое сообщение, за что \(emp.fullName) получит благодарность. 🌟 (от \(minReasonLength) символов)",
-                        replyMarkup: KeyboardBuilder.reasonMenu()
-                    )
-                    return
-                }
-            }
-            
-            if let emp = try? await Employee.query(on: db)
-                .filter(\.$isActive == true)
-                .filter(\.$telegramId != nil)
-                .filter(\.$fullName == sel.name)
-                .first(),
-               let empId = try? emp.requireID() {
-                var senderEmployeeID: UUID? = nil
-                if let tg = userId {
-                    senderEmployeeID = try? await Employee.query(on: db)
-                        .filter(\.$telegramId == tg)
-                        .first()?
-                        .requireID()
-                }
-                if let sid = senderEmployeeID, sid == empId {
-                    await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
-                    await TelegramService.sendMessage(
-                        app, api: api, chatId: chatId,
-                        text: "Нельзя отправить спасибо самому себе 🙂 Выбери коллегу.",
-                        replyMarkup: KeyboardBuilder.backToEmployeesList()
-                    )
-                    await sessions.set(chatId, Session(state: .choosingEmployee, to: nil, page: (await sessions.get(chatId))?.page))
-                    return
-                }
-                let currentPage = (await sessions.get(chatId))?.page
-                await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
-                await sessions.set(chatId, Session(state: .awaitingReason, to: nil, page: currentPage, chosenEmployeeId: empId))
-                await TelegramService.sendMessage(
-                    app, api: api, chatId: chatId,
-                    text: "Напиши короткое сообщение, за что \(emp.fullName) получит благодарность. 🌟 (от \(minReasonLength) символов)",
-                    replyMarkup: KeyboardBuilder.reasonMenu()
-                )
-            } else {
-                await TelegramService.sendMessage(
-                    app, api: api, chatId: chatId,
-                    text: "Не нашел такого сотрудника. Листай </> или выбери из списка."
-                )
-            }
-
-        case (.awaitingRecipient, "← Назад"):
-            await sessions.set(chatId, Session(state: .thanksMenu))
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Меню благодарностей:",
-                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isUserAdmin)
-            )
-
-        case (.awaitingRecipient, _) where trimmed.hasPrefix("@"):
-            await sessions.set(chatId, Session(state: .awaitingReason, to: trimmed))
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Напиши короткое сообщение, за что хочешь сказать «спасибо». 🌟 (от \(minReasonLength) символов)",
-                replyMarkup: KeyboardBuilder.reasonMenu()
-            )
+            await selectRecipientByText(app: app, api: api, chatId: chatId, userId: userId, input: trimmed, sessions: sessions, db: db)
 
         case (.awaitingRecipient, _):
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Пришли @username получателя."
-            )
-            await sessions.set(chatId, Session(state: .awaitingRecipient))
+            // Устаревший сценарий ввода @username — возвращаем в главное меню
+            await showMainMenu(app: app, api: api, chatId: chatId, sessions: sessions, isUserAdmin: isUserAdmin)
 
         case (.awaitingReason, "← Назад"):
-            let page = (await sessions.get(chatId))?.page ?? 0
+            // page == nil — получатель был выбран автоматически, списка не было
+            guard let page = session.page else {
+                await showMainMenu(app: app, api: api, chatId: chatId, sessions: sessions, isUserAdmin: isUserAdmin)
+                return
+            }
             await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await showEmployeesPage(app: app, api: api, chatId: chatId, sessions: sessions, db: db, page: page)
 
         case (.awaitingReason, "Отмена"):
-            await sessions.set(chatId, Session(state: .mainMenu))
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Действие отменено.",
-                replyMarkup: KeyboardBuilder.mainMenu()
+            await showMainMenu(
+                app: app, api: api, chatId: chatId, sessions: sessions, isUserAdmin: isUserAdmin,
+                text: "Хорошо, отменили."
             )
 
         case (.awaitingReason, _) where trimmed.count < minReasonLength:
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "Сообщение должно содержать не менее \(minReasonLength) символов.",
-                replyMarkup: KeyboardBuilder.reasonMenu()
+                text: "Напиши хотя бы пару слов 🙂",
+                replyMarkup: KeyboardBuilder.reasonMenu(showBack: session.page != nil)
             )
-            var s = await sessions.get(chatId) ?? Session()
-            s.state = .awaitingReason
-            s.to = currentTo
-            await sessions.set(chatId, s)
 
-        case (.awaitingReason, _) where trimmed.count >= minReasonLength:
-            let fromUN = normalizeUsername(username ?? "unknown")
-            let recipientId = (await sessions.get(chatId))?.chosenEmployeeId
-            let toUN = currentTo != nil ? normalizeUsername(currentTo!) : "@unknown"
-
-            var senderEmployeeID: UUID? = nil
-            if let tg = userId {
-                senderEmployeeID = try? await Employee.query(on: db)
-                    .filter(\.$telegramId == tg)
-                    .first()?
-                    .requireID()
-            }
-
-            if let sid = senderEmployeeID, let rid = recipientId, sid == rid {
-                await TelegramService.sendMessage(
-                    app, api: api, chatId: chatId,
-                    text: "Нельзя отправить спасибо самому себе 🙂 Выберите коллегу.",
-                    replyMarkup: KeyboardBuilder.backToEmployeesList()
-                )
-                let page = (await sessions.get(chatId))?.page ?? 0
-                await sessions.set(chatId, Session(state: .choosingEmployee, to: nil, page: page, chosenEmployeeId: nil))
-                return
-            }
-
-            let kudos = Kudos(
-                ts: Date(),
-                fromUserId: userId ?? 0,
-                fromUsername: fromUN,
-                fromName: username ?? fromUN,
-                toUsername: toUN,
-                reason: trimmed,
-                employeeId: recipientId,
-                fromEmployeeId: senderEmployeeID
+        case (.awaitingReason, _):
+            await saveThanks(
+                app: app, api: api, chatId: chatId, userId: userId, username: username,
+                reason: trimmed, recipientId: session.chosenEmployeeId,
+                sessions: sessions, db: db, isUserAdmin: isUserAdmin
             )
-            try? await kudos.save(on: db)
-            
-            if let rid = recipientId,
-               let recipientEmp = try? await Employee.find(rid, on: db),
-               let recipientTgId = recipientEmp.telegramId {
-                
-                var senderDisplayName = username ?? fromUN
-                if let uid = userId,
-                   let senderEmp = try? await Employee.query(on: db)
-                       .filter(\.$telegramId == uid)
-                       .first() {
-                    senderDisplayName = senderEmp.fullName
-                }
-
-                let notifyText = """
-                🥳 <b>Тебе прилетело спасибо!</b>
-                
-                От: \(senderDisplayName)
-                Текст: «\(trimmed)»
-                """
-                
-                Task {
-                    await TelegramService.sendMessage(app, api: api, chatId: recipientTgId, text: notifyText)
-                }
-            }
-
-            var targetText = toUN
-            if let rid = recipientId, let emp = try? await Employee.find(rid, on: db) {
-                targetText = emp.fullName
-            }
-
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "\(targetText) получил(а) твою благодарность 💛",
-                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isUserAdmin)
-            )
-            await sessions.set(chatId, Session(state: .thanksMenu, to: nil, page: (await sessions.get(chatId))?.page, chosenEmployeeId: nil))
 
         default:
             break
         }
+    }
+
+    // MARK: - Private
+
+    /// Выбор получателя текстом (кнопки старой reply-клавиатуры, формат «Имя» или «Имя (N)»)
+    private static func selectRecipientByText(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        userId: Int64?,
+        input: String,
+        sessions: SessionStore,
+        db: Database
+    ) async {
+        let sel = parseEmployeeSelection(input)
+        let candidates = ((try? await Employee.query(on: db)
+            .filter(\.$isActive == true)
+            .filter(\.$telegramId != nil)
+            .filter(\.$fullName == sel.name)
+            .all()) ?? [])
+            .sorted { ($0.id?.uuidString ?? "") < ($1.id?.uuidString ?? "") }
+
+        let chosen: Employee?
+        if let idx = sel.index, idx >= 1, idx <= candidates.count {
+            chosen = candidates[idx - 1]
+        } else {
+            chosen = candidates.first
+        }
+
+        guard let recipient = chosen, let recipientId = recipient.id else {
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Не нашёл такого участника. Листай </> или выбери из списка."
+            )
+            return
+        }
+
+        if recipient.telegramId == userId {
+            await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Себе спасибо тоже важно говорить, но здесь — только другим 🙂",
+                replyMarkup: KeyboardBuilder.backToEmployeesList()
+            )
+            let page = (await sessions.get(chatId))?.page
+            await sessions.set(chatId, Session(state: .choosingEmployee, page: page))
+            return
+        }
+
+        let currentPage = (await sessions.get(chatId))?.page
+        await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
+        await sessions.set(chatId, Session(state: .awaitingReason, page: currentPage ?? 0, chosenEmployeeId: recipientId))
+        await askForReason(app: app, api: api, chatId: chatId, recipientName: recipient.fullName, canGoBack: true)
+    }
+
+    private static func saveThanks(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        userId: Int64?,
+        username: String?,
+        reason: String,
+        recipientId: UUID?,
+        sessions: SessionStore,
+        db: Database,
+        isUserAdmin: Bool
+    ) async {
+        guard let recipientId, let recipient = try? await Employee.find(recipientId, on: db) else {
+            await showMainMenu(
+                app: app, api: api, chatId: chatId, sessions: sessions, isUserAdmin: isUserAdmin,
+                text: "Не получилось найти получателя. Попробуй ещё раз."
+            )
+            return
+        }
+
+        let sender = await currentParticipant(userId: userId, db: db)
+        if let sender, sender.id == recipientId {
+            await showMainMenu(
+                app: app, api: api, chatId: chatId, sessions: sessions, isUserAdmin: isUserAdmin,
+                text: "Себе спасибо тоже важно говорить, но здесь — только другим 🙂"
+            )
+            return
+        }
+
+        let fromUN = normalizeUsername(username ?? "unknown")
+        let kudos = Kudos(
+            ts: Date(),
+            fromUserId: userId ?? 0,
+            fromUsername: fromUN,
+            fromName: username ?? fromUN,
+            toUsername: "@unknown",
+            reason: reason,
+            employeeId: recipientId,
+            fromEmployeeId: sender?.id
+        )
+
+        do {
+            try await kudos.save(on: db)
+        } catch {
+            app.logger.error("thanks_save_failed: \(error)")
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Не получилось сохранить спасибо 😔 Попробуй ещё раз чуть позже.",
+                replyMarkup: KeyboardBuilder.reasonMenu(showBack: (await sessions.get(chatId))?.page != nil)
+            )
+            return
+        }
+
+        if let recipientTgId = recipient.telegramId, let kudosId = kudos.id {
+            let senderName = sender?.fullName ?? username ?? fromUN
+            let notifyText = """
+            💌 <b>Тебе спасибо!</b>
+
+            От: \(senderName.htmlEscaped)
+            «\(reason.htmlEscaped)»
+            """
+            await TelegramService.sendMessage(
+                app, api: api, chatId: recipientTgId,
+                text: notifyText,
+                inlineMarkup: KeyboardBuilder.reactionsInline(kudosId: kudosId)
+            )
+        }
+
+        await showMainMenu(
+            app: app, api: api, chatId: chatId, sessions: sessions, isUserAdmin: isUserAdmin,
+            text: "Отправлено! <b>\(recipient.fullName.htmlEscaped)</b> получит твоё спасибо 💛"
+        )
     }
 }

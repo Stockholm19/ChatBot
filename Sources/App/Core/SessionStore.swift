@@ -3,7 +3,7 @@
 //  kudos-vapor
 //
 //  Потокобезопасное хранилище сессий для чатов Telegram.
-//  Нужно для пошаговых диалогов (например, команда /thanks).
+//  Нужно для пошаговых диалогов (например, сценарий «Сказать спасибо»).
 //
 
 import Foundation
@@ -11,14 +11,13 @@ import Foundation
 /// 1. Возможные состояния диалога (в каком месте меню/сценария находится пользователь)
 public enum SessionState: String, Codable {
     case mainMenu
-    case thanksMenu
     case statisticsMenu
     case choosingEmployee
     case awaitingRecipient
     case awaitingReason
     case adminMenu
     
-    // Admin: Add Employee
+    // Admin: Add Participant
     case adminAddAskName
     case adminAddConfirmName
     case adminAddAskForward
@@ -54,6 +53,7 @@ public enum SessionState: String, Codable {
 public struct Session: Codable {
     public var state: SessionState
     public var to: String?
+    /// Страница списка получателей; nil — получатель выбран автоматически (список не показывался)
     public var page: Int?
     public var chosenEmployeeId: UUID?
     public var activeInlineListMessageId: Int?

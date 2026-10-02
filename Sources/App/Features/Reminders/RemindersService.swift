@@ -4,70 +4,74 @@
 //
 //  Created by Роман Пшеничников on 18.11.2025.
 //
+//  Личные напоминания: бот пишет каждому участнику в ЛС.
+//  Тех, кто сегодня уже сказал спасибо, не беспокоим.
+//
 
 import Vapor
 
-final class RemindersService {
+struct RemindersService {
 
-    private(set) var messages: [String] = []
+    static let namePlaceholder = "{name}"
+    static let fallbackMessage = "Есть за что сказать спасибо сегодня? 💌"
 
-    private let app: Application
-    private let client: Client
-    private let chatId: String
-    private let botToken: String
+    let app: Application
+    let api: String
+    let messages: [String]
 
-    init(app: Application) {
-        self.app = app
-        self.client = app.client
-        self.chatId = Environment.get("REMINDER_CHAT_ID") ?? ""
-        self.botToken = Environment.get("BOT_TOKEN") ?? ""
-        loadMessages(app: app)
-        app.logger.info("RemindersService initialized. chatId=\(chatId), tokenEmpty=\(botToken.isEmpty)")
-    }
-
-    private func loadMessages(app: Application) {
+    static func loadMessages(app: Application) -> [String] {
         let filePath = app.directory.resourcesDirectory + "Reminders/messages.json"
-
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
             let decoded = try JSONDecoder().decode([String].self, from: data)
-            self.messages = decoded
-            app.logger.info("RemindersService: loaded \(messages.count) reminder messages")
+            app.logger.info("RemindersService: loaded \(decoded.count) reminder messages")
+            return decoded.isEmpty ? [fallbackMessage] : decoded
         } catch {
             app.logger.error("RemindersService: failed to load messages.json: \(error)")
-            self.messages = ["Не забывайте говорить спасибо коллегам 🙂"]
+            return [fallbackMessage]
         }
     }
 
-    func sendRandomReminder() {
-        guard !chatId.isEmpty else {
-            app.logger.warning("REMINDER_CHAT_ID is empty, skip reminder")
-            return
+    /// Выбирает текст напоминания. `{name}` подставляется, только если «второй половинке» есть однозначное имя;
+    /// иначе используются тексты без плейсхолдера.
+    static func composeMessage(from messages: [String], otherName: String?) -> String {
+        let candidates: [String]
+        if let otherName {
+            candidates = messages.map { $0.replacingOccurrences(of: namePlaceholder, with: otherName.htmlEscaped) }
+        } else {
+            candidates = messages.filter { !$0.contains(namePlaceholder) }
         }
-        guard !botToken.isEmpty else {
-            app.logger.warning("BOT_TOKEN is empty, skip reminder")
-            return
-        }
-        guard let msg = messages.randomElement() else {
-            app.logger.warning("No reminder messages loaded, skip reminder")
+        let text = candidates.randomElement() ?? fallbackMessage
+        return text + "\n\nНажми «\(KeyboardBuilder.MainMenuButton.sayThanks)» в меню."
+    }
+
+    func sendReminders() async {
+        let participants: [Employee]
+        do {
+            participants = try await FluentEmployeesRepo(db: app.db).activeLinked()
+        } catch {
+            app.logger.error("RemindersService: failed to load participants: \(error)")
             return
         }
 
-        struct Payload: Content {
-            let chat_id: String
-            let text: String
-        }
+        let kudos = KudosService(db: app.db)
+        var sent = 0
 
-        let uri = URI(string: "https://api.telegram.org/bot\(botToken)/sendMessage")
-        let payload = Payload(chat_id: chatId, text: msg)
+        for participant in participants {
+            guard let chatId = participant.telegramId, let participantId = participant.id else { continue }
 
-        Task {
-            do {
-                _ = try await client.post(uri, content: payload)
-                app.logger.info("Reminder sent to chat \(chatId)")
-            } catch {
-                app.logger.error("Failed to send reminder: \(error)")
+            if (try? await kudos.hasSentToday(employeeId: participantId)) == true {
+                continue
             }
+
+            let others = participants.filter { $0.id != participantId }
+            let otherName = others.count == 1 ? others.first?.fullName : nil
+            let text = Self.composeMessage(from: messages, otherName: otherName)
+
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: text)
+            sent += 1
         }
+
+        app.logger.info("RemindersService: personal reminders sent=\(sent) participants=\(participants.count)")
     }
 }

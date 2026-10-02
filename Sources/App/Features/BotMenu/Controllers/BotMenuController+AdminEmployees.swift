@@ -28,14 +28,14 @@ extension BotMenuController {
         case .adminAddAskName:
             if text == "← Назад" {
                 await sessions.set(chatId, Session(state: .adminMenu))
-                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
+                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Настройки:", replyMarkup: KeyboardBuilder.adminMenu())
             } else {
                 guard !trimmed.isEmpty else {
                     await TelegramService.sendMessage(
                         app,
                         api: api,
                         chatId: chatId,
-                        text: "Ошибка: имя пустое. Введи Фамилию и Имя.",
+                        text: "Имя не может быть пустым. Как подписывать участника?",
                         replyMarkup: KeyboardBuilder.back()
                     )
                     var s = await sessions.get(chatId) ?? Session()
@@ -49,7 +49,7 @@ extension BotMenuController {
                 session.draftFullName = trimmed
                 session.state = .adminAddConfirmName
                 await sessions.set(chatId, session)
-                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Новый сотрудник: \(trimmed). Все верно?", replyMarkup: KeyboardBuilder.yesNo())
+                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Новый участник: \(trimmed.htmlEscaped). Всё верно?", replyMarkup: KeyboardBuilder.yesNo())
             }
 
         case .adminAddConfirmName:
@@ -58,7 +58,7 @@ extension BotMenuController {
                 session.draftFullName = nil
                 session.state = .adminAddAskName
                 await sessions.set(chatId, session)
-                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Введи Фамилию и Имя (например: Иванов Иван)", replyMarkup: KeyboardBuilder.back())
+                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: Self.askNameText, replyMarkup: KeyboardBuilder.back())
             } else if text == "Да" {
                 var session = await sessions.get(chatId) ?? Session()
                 session.state = .adminAddAskForward
@@ -68,9 +68,9 @@ extension BotMenuController {
                     api: api,
                     chatId: chatId,
                     text: """
-                    Перешли любое сообщение от сотрудника, чтобы я мог узнать его Telegram ID.
+                    Перешли любое сообщение от этого человека, чтобы я узнал его Telegram.
 
-                    <i>Если у сотрудника скрыт профиль, нажми кнопку ниже для привязки через код.</i>
+                    <i>Если в пересылках профиль скрыт — нажми кнопку ниже и отправь ему код приглашения.</i>
                     """,
                     replyMarkup: KeyboardBuilder.adminAddForwardMenu()
                 )
@@ -79,7 +79,7 @@ extension BotMenuController {
         case .adminAddAskForward:
             if text == "← Назад" {
                 await sessions.set(chatId, Session(state: .adminAddAskName))
-                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Введи Фамилию и Имя", replyMarkup: KeyboardBuilder.back())
+                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: Self.askNameText, replyMarkup: KeyboardBuilder.back())
             } else if text == "🔗 Привязать через код" {
                 await handleAdminAddLinkByCode(app: app, api: api, chatId: chatId, userId: userId, sessions: sessions, db: db)
             } else {
@@ -107,12 +107,12 @@ extension BotMenuController {
 
                 let draftName = session.draftFullName ?? "???"
                 let msg = """
-                Привязываем сотрудника: \(draftName)
+                Привязываем участника: \(draftName.htmlEscaped)
                 к Telegram-аккаунту: \(uname)
-                Имя в Telegram: \(tgName)
+                Имя в Telegram: \(tgName.htmlEscaped)
                 ID: \(tgId)
 
-                Все верно?
+                Всё верно?
                 """
 
                 await TelegramService.sendMessage(
@@ -162,13 +162,13 @@ extension BotMenuController {
                 if let eid = eid, let emp = try? await Employee.find(eid, on: db) {
                     emp.isActive = false
                     try? await emp.save(on: db)
-                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник перенесен в архив.", replyMarkup: KeyboardBuilder.adminMenu())
+                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Участник отключён. Вернуть можно в «📁 Отключённые».", replyMarkup: KeyboardBuilder.adminMenu())
                 }
                 await sessions.set(chatId, Session(state: .adminMenu))
             } else {
                 let s = await sessions.get(chatId)
                 if let eid = s?.selectedEmployeeId, let emp = try? await Employee.find(eid, on: db) {
-                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Деактивировать \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
+                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Отключить \(emp.fullName.htmlEscaped)? Бот перестанет ему писать, история сохранится.", replyMarkup: KeyboardBuilder.yesNo())
                 }
             }
 
@@ -184,7 +184,7 @@ extension BotMenuController {
                 s.state = .adminArchiveActions
                 await sessions.set(chatId, s)
                 if let eid = s.selectedEmployeeId, let emp = try? await Employee.find(eid, on: db) {
-                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Выбран сотрудник: \(emp.fullName)\nЧто сделать?", replyMarkup: KeyboardBuilder.adminArchiveActionsMenu())
+                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Участник: \(emp.fullName.htmlEscaped)\nЧто сделать?", replyMarkup: KeyboardBuilder.adminArchiveActionsMenu())
                 }
             } else if text == "Да" {
                 let s = await sessions.get(chatId)
@@ -192,13 +192,13 @@ extension BotMenuController {
                 if let eid = eid, let emp = try? await Employee.find(eid, on: db) {
                     emp.isActive = true
                     try? await emp.save(on: db)
-                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник снова активен.", replyMarkup: KeyboardBuilder.adminMenu())
+                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Участник снова в боте 💛", replyMarkup: KeyboardBuilder.adminMenu())
                 }
                 await sessions.set(chatId, Session(state: .adminMenu))
             } else {
                 let s = await sessions.get(chatId)
                 if let eid = s?.selectedEmployeeId, let emp = try? await Employee.find(eid, on: db) {
-                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Вернуть сотрудника \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
+                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Вернуть \(emp.fullName.htmlEscaped)?", replyMarkup: KeyboardBuilder.yesNo())
                 }
             }
 
@@ -250,9 +250,9 @@ extension BotMenuController {
             let pending = PendingLink(code: code, employeeId: empId, createdByAdminTgId: userId, expiresAt: Date().addingTimeInterval(6 * 3600))
             try await pending.save(on: db)
             let msg = """
-            Сотрудник <b>\(name)</b> создан! ✅
+            Участник <b>\(name.htmlEscaped)</b> добавлен! ✅
 
-            Отправь сотруднику эту команду для привязки Telegram:
+            Отправь ему эту команду-приглашение:
             <code>/link \(code)</code>
 
             Как привязать:
@@ -276,7 +276,7 @@ extension BotMenuController {
         newEmp.telegramId = tgId
         do {
             try await newEmp.save(on: db)
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник \(name) добавлен! ✅", replyMarkup: KeyboardBuilder.adminMenu())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Участник \(name.htmlEscaped) добавлен! ✅ Теперь можно говорить друг другу спасибо.", replyMarkup: KeyboardBuilder.adminMenu())
         } catch {
             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: \(error.localizedDescription)", replyMarkup: KeyboardBuilder.adminMenu())
         }
@@ -295,7 +295,7 @@ extension BotMenuController {
         } else if text == "← Назад" {
             await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await sessions.set(chatId, Session(state: .adminMenu))
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Настройки:", replyMarkup: KeyboardBuilder.adminMenu())
         } else {
             let sel = parseEmployeeSelection(trimmed)
             if let emp = try? await Employee.query(on: db).filter(\.$fullName == sel.name).filter(\.$isActive == true).first(),
@@ -305,7 +305,7 @@ extension BotMenuController {
                 sess.selectedEmployeeId = eid
                 sess.state = .adminDeactivateConfirm
                 await sessions.set(chatId, sess)
-                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Деактивировать \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
+                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Отключить \(emp.fullName.htmlEscaped)? Бот перестанет ему писать, история сохранится.", replyMarkup: KeyboardBuilder.yesNo())
             }
         }
     }
@@ -326,7 +326,7 @@ extension BotMenuController {
             session.selectedEmployeeId = nil
             session.draftFullName = nil
             await sessions.set(chatId, session)
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Настройки:", replyMarkup: KeyboardBuilder.adminMenu())
         } else {
             let sel = parseEmployeeSelection(trimmed)
             let candidates = (try? await Employee.query(on: db)
@@ -359,7 +359,7 @@ extension BotMenuController {
                 app,
                 api: api,
                 chatId: chatId,
-                text: "Текущее ФИО: \(emp.fullName)\n\nВведи новое ФИО (например: Иванов Иван)",
+                text: "Сейчас: \(emp.fullName.htmlEscaped)\n\nКак теперь подписывать участника?",
                 replyMarkup: KeyboardBuilder.back()
             )
         }
@@ -378,7 +378,7 @@ extension BotMenuController {
                 app,
                 api: api,
                 chatId: chatId,
-                text: "Ошибка: ФИО пустое. Введи Фамилию и Имя.",
+                text: "Имя не может быть пустым. Как подписывать участника?",
                 replyMarkup: KeyboardBuilder.back()
             )
             return
@@ -388,7 +388,7 @@ extension BotMenuController {
               let empId = session.selectedEmployeeId,
               let emp = try? await Employee.find(empId, on: db) else {
             await sessions.set(chatId, Session(state: .adminMenu))
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: сотрудник не найден.", replyMarkup: KeyboardBuilder.adminMenu())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Не нашёл этого участника.", replyMarkup: KeyboardBuilder.adminMenu())
             return
         }
 
@@ -401,7 +401,7 @@ extension BotMenuController {
             app,
             api: api,
             chatId: chatId,
-            text: "Изменить ФИО:\n\(emp.fullName) → \(trimmed)\n\nВсе верно?",
+            text: "Переименовать:\n\(emp.fullName.htmlEscaped) → \(trimmed.htmlEscaped)\n\nВсё верно?",
             replyMarkup: KeyboardBuilder.yesNoCancel()
         )
     }
@@ -427,7 +427,7 @@ extension BotMenuController {
                     app,
                     api: api,
                     chatId: chatId,
-                    text: "Текущее ФИО: \(emp.fullName)\n\nВведи новое ФИО (например: Иванов Иван)",
+                    text: "Сейчас: \(emp.fullName.htmlEscaped)\n\nКак теперь подписывать участника?",
                     replyMarkup: KeyboardBuilder.back()
                 )
             }
@@ -442,7 +442,7 @@ extension BotMenuController {
               !newName.isEmpty,
               let emp = try? await Employee.find(empId, on: db) else {
             await sessions.set(chatId, Session(state: .adminMenu))
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: не удалось обновить ФИО.", replyMarkup: KeyboardBuilder.adminMenu())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Не получилось изменить имя.", replyMarkup: KeyboardBuilder.adminMenu())
             return
         }
 
@@ -450,7 +450,7 @@ extension BotMenuController {
         emp.fullName = newName
         do {
             try await emp.save(on: db)
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "✅ ФИО обновлено: \(oldName) → \(newName)", replyMarkup: KeyboardBuilder.adminMenu())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "✅ Имя обновлено: \(oldName.htmlEscaped) → \(newName.htmlEscaped)", replyMarkup: KeyboardBuilder.adminMenu())
         } catch {
             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка сохранения: \(error.localizedDescription)", replyMarkup: KeyboardBuilder.adminMenu())
         }
@@ -474,7 +474,7 @@ extension BotMenuController {
         } else if text == "← Назад" {
             await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await sessions.set(chatId, Session(state: .adminMenu))
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Настройки:", replyMarkup: KeyboardBuilder.adminMenu())
         } else {
             let sel = parseEmployeeSelection(trimmed)
             if let emp = try? await Employee.query(on: db).filter(\.$fullName == sel.name).filter(\.$isActive == false).first(),
@@ -484,7 +484,7 @@ extension BotMenuController {
                 sess.selectedEmployeeId = eid
                 sess.state = .adminArchiveActions
                 await sessions.set(chatId, sess)
-                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Выбран сотрудник: \(emp.fullName)\nЧто сделать?", replyMarkup: KeyboardBuilder.adminArchiveActionsMenu())
+                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Участник: \(emp.fullName.htmlEscaped)\nЧто сделать?", replyMarkup: KeyboardBuilder.adminArchiveActionsMenu())
             }
         }
     }
@@ -496,9 +496,9 @@ extension BotMenuController {
                 var sess = await sessions.get(chatId) ?? Session()
                 sess.state = .adminArchiveConfirm
                 await sessions.set(chatId, sess)
-                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Вернуть сотрудника \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
+                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Вернуть \(emp.fullName.htmlEscaped)?", replyMarkup: KeyboardBuilder.yesNo())
             }
-        } else if text == "🗑 Полное удаление" || text == "🗑 Удалить из системы" {
+        } else if text == "🗑 Полное удаление" || text == "🗑 Удалить совсем" {
             let eid = (await sessions.get(chatId))?.selectedEmployeeId
             if let eid = eid, let emp = try? await Employee.find(eid, on: db) {
                 let countTo = (try? await Kudos.query(on: db).filter(\.$employee.$id == eid).count()) ?? 0
@@ -506,7 +506,7 @@ extension BotMenuController {
                 var sess = await sessions.get(chatId) ?? Session()
                 sess.state = .adminArchiveDeleteConfirm
                 await sessions.set(chatId, sess)
-                let msg = "⚠️ ВНИМАНИЕ! Удалить \(emp.fullName)?\nПолучено: \(countTo), Отправлено: \(countFrom)"
+                let msg = "⚠️ Удалить \(emp.fullName.htmlEscaped) совсем? Вместе с ним удалятся все его спасибо — это нельзя отменить.\nПолучено: \(countTo), отправлено: \(countFrom)"
                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: msg, replyMarkup: KeyboardBuilder.yesNo())
             }
         } else if text == "← Назад" {
@@ -521,7 +521,7 @@ extension BotMenuController {
             var newSess = sess
             newSess.state = .adminArchiveActions
             await sessions.set(chatId, newSess)
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Выбран сотрудник: \(emp.fullName)\nЧто сделать?", replyMarkup: KeyboardBuilder.adminArchiveActionsMenu())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Участник: \(emp.fullName.htmlEscaped)\nЧто сделать?", replyMarkup: KeyboardBuilder.adminArchiveActionsMenu())
         } else {
             await sessions.set(chatId, Session(state: .adminMenu))
             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Отменено.", replyMarkup: KeyboardBuilder.adminMenu())
@@ -538,7 +538,7 @@ extension BotMenuController {
                 }.delete()
                 if let emp = try await Employee.find(eid, on: tx) { try await emp.delete(on: tx) }
             }
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Сотрудник и все его благодарности полностью удалены из системы. 🗑✅", replyMarkup: KeyboardBuilder.adminMenu())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Участник и все его спасибо удалены. 🗑", replyMarkup: KeyboardBuilder.adminMenu())
         } catch {
             await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Ошибка: \(error.localizedDescription)", replyMarkup: KeyboardBuilder.adminMenu())
         }

@@ -58,6 +58,12 @@ final class Kudos: Model, Content, @unchecked Sendable {
     /// Причина благодарности (текст)
     @Field(key: "reason") var reason: String
 
+    /// Реакция получателя на спасибо (эмодзи), nil — пока без ответа
+    @OptionalField(key: "reaction") var reaction: String?
+
+    /// Когда получатель отреагировал
+    @OptionalField(key: "reacted_at") var reactedAt: Date?
+
     init() {}
 
     init(ts: Date,
@@ -109,6 +115,23 @@ struct AddFromEmployeeIdToKudos: AsyncMigration {
     func revert(on db: Database) async throws {
         try await db.schema(Kudos.schema)
             .deleteField("from_employee_id")
+            .update()
+    }
+}
+
+/// Миграция: добавить колонки reaction / reacted_at (ответ получателя на спасибо)
+struct AddReactionToKudos: AsyncMigration {
+    func prepare(on db: Database) async throws {
+        try await db.schema(Kudos.schema)
+            .field("reaction", .string)
+            .field("reacted_at", .datetime)
+            .update()
+    }
+
+    func revert(on db: Database) async throws {
+        try await db.schema(Kudos.schema)
+            .deleteField("reaction")
+            .deleteField("reacted_at")
             .update()
     }
 }

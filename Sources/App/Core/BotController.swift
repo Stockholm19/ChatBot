@@ -12,6 +12,8 @@ import Fluent
 /// Делегирует навигацию в BotMenu и доменные действия в соответствующие фичи.
 enum BotController {
 
+    static let accessDeniedText = "Привет! Это личный бот для своих 💛\nЕсли тебя пригласили — отправь код командой /link."
+
     /// Обработка одного входящего сообщения
     static func handle(app: Application, message m: TgMessage, api: String, sessions: SessionStore) async {
         let chatId = m.chat.id
@@ -34,26 +36,26 @@ enum BotController {
         }
 
         // Сначала проверяем, не является ли пользователь админом.
-        // Админы получают доступ, даже если их нет в списке сотрудников.
+        // Админы получают доступ, даже если их нет в списке участников.
         if BotMenuController.isAdmin(userId: userId, username: m.from?.username) {
             app.logger.info("Admin access granted for user: \(userId)")
         } else {
-            // Если не админ, ищем сотрудника в базе по telegramId
+            // Если не админ, ищем участника в базе по telegramId
             do {
                 let employee = try await Employee.query(on: app.db)
                     .filter(\.$telegramId == userId)
                     .filter(\.$isActive == true)
                     .first()
 
-                // Если сотрудник не найден или неактивен, отказываем в доступе
+                // Если участник не найден или отключён, отказываем в доступе
                 guard employee != nil else {
-                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "К сожалению, доступ к боту ограничен только для сотрудников.")
-                    app.logger.info("Access denied for non-employee or inactive user: \(userId)")
+                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: Self.accessDeniedText)
+                    app.logger.info("Access denied for non-participant or inactive user: \(userId)")
                     return
                 }
             } catch {
                 // В случае ошибки с базой данных, тоже отказываем
-                app.logger.error("Database error during employee check: \(error.localizedDescription)")
+                app.logger.error("Database error during participant check: \(error.localizedDescription)")
                 await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Произошла внутренняя ошибка. Пожалуйста, попробуйте позже.")
                 return
             }
@@ -63,7 +65,7 @@ enum BotController {
 
         // 1) Стартовое меню
         if text == "/start" {
-            await BotMenuController.handleStart(app: app, api: api, chatId: chatId, sessions: sessions)
+            await BotMenuController.handleStart(app: app, api: api, chatId: chatId, userId: userId, username: m.from?.username, sessions: sessions)
             return
         }
 
@@ -108,14 +110,14 @@ enum BotController {
                         app,
                         api: api,
                         callbackQueryId: q.id,
-                        text: "Доступ ограничен только для сотрудников.",
+                        text: "Это личный бот 💛",
                         showAlert: true
                     )
-                    app.logger.info("Callback access denied for non-employee or inactive user: \(userId)")
+                    app.logger.info("Callback access denied for non-participant or inactive user: \(userId)")
                     return
                 }
             } catch {
-                app.logger.error("Database error during callback employee check: \(error.localizedDescription)")
+                app.logger.error("Database error during callback participant check: \(error.localizedDescription)")
                 await TelegramService.answerCallbackQuery(
                     app,
                     api: api,
@@ -164,7 +166,7 @@ enum BotController {
                 .filter(\.$code == code)
                 .with(\.$employee)
                 .first() else {
-                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Код не найден или устарел. Попроси админа создать новый.")
+                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Код не найден или устарел. Попроси новый код у того, кто тебя пригласил.")
                 app.logger.warning("link_failed_not_found: fromId=\(fromId), code=\(code)")
                 return
             }
@@ -176,7 +178,7 @@ enum BotController {
             }
 
             if pending.expiresAt < Date() {
-                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Код истек. Попроси админа создать новый.")
+                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Срок действия кода истёк. Попроси новый код у того, кто тебя пригласил.")
                 app.logger.warning("link_failed_expired: fromId=\(fromId), code=\(code)")
                 return
             }
@@ -186,28 +188,28 @@ enum BotController {
 
             // Проверка конфликтов
             
-            // 1. Если этот Telegram ID уже привязан к ДРУГОМУ сотруднику
+            // 1. Если этот Telegram ID уже привязан к ДРУГОМУ участнику
             let existingWithId = try await Employee.query(on: db)
                 .filter(\.$telegramId == fromId)
                 .first()
             
             if let existing = existingWithId, try existing.requireID() != employeeId {
-                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Этот Telegram уже привязан к другому сотруднику. Обратись к администратору.")
+                await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Этот Telegram уже привязан к другому участнику. Напиши администратору бота.")
                 app.logger.warning("link_failed_conflict_tg: fromId=\(fromId), employeeId=\(employeeId)")
                 return
             }
 
-            // 2. Проверка состояния текущего сотрудника
+            // 2. Проверка состояния текущего участника
             if let currentTgId = employee.telegramId {
                 if currentTgId == fromId {
-                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Твой аккаунт уже привязан. Можешь пользоваться ботом!")
+                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Твой аккаунт уже привязан — можно говорить спасибо! Нажми /start")
                     // Закрываем pending как успех
                     pending.isUsed = true
                     pending.usedAt = Date()
                     try await pending.save(on: db)
                     return
                 } else {
-                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "К этому сотруднику уже привязан другой Telegram ID. Обратись к администратору.")
+                    await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "К этому участнику уже привязан другой Telegram. Напиши администратору бота.")
                     app.logger.warning("link_failed_conflict_emp: fromId=\(fromId), employeeId=\(employeeId), existingTg=\(currentTgId)")
                     return
                 }
@@ -233,12 +235,12 @@ enum BotController {
                 try await pendingInTx.save(on: tx)
             }
 
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Готово! Твой аккаунт привязан. Теперь ты можешь пользоваться всеми функциями бота.")
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Готово, ты в боте! 💛 Нажми /start, чтобы открыть меню.")
             app.logger.info("link_success: fromId=\(fromId), employeeId=\(employeeId)")
 
             // Уведомляем админа
             if let adminId = pending.createdByAdminTgId {
-                let adminMsg = "✅ Сотрудник <b>\(employee.fullName)</b> успешно привязал свой Telegram."
+                let adminMsg = "✅ <b>\(employee.fullName.htmlEscaped)</b> привязал(а) свой Telegram и теперь в боте."
                 await TelegramService.sendMessage(app, api: api, chatId: adminId, text: adminMsg)
             }
 

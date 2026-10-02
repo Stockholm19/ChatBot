@@ -14,21 +14,23 @@ enum KeyboardBuilder {
         let title: String
     }
 
-    static func mainMenu() -> TgReplyKeyboard {
-        TgReplyKeyboard(
-            keyboard: [[ .init(text: "Передать спасибо") ]],
-            resize_keyboard: true,
-            one_time_keyboard: false
-        )
+    // Тексты кнопок главного меню — используются и в клавиатуре, и в роутинге
+    enum MainMenuButton {
+        static let sayThanks = "💌 Сказать спасибо"
+        static let feed = "📜 Наши спасибо"
+        static let jar = "🫙 Вспомнить"
+        static let stats = "📊 Статистика"
+        static let settings = "⚙️ Настройки"
     }
 
-    static func thanksMenu(isAdmin: Bool) -> TgReplyKeyboard {
+    /// Единое главное меню: все основные действия на одном экране
+    static func mainMenu(isAdmin: Bool) -> TgReplyKeyboard {
         var rows: [[TgReplyKeyboard.Button]] = [
-            [ .init(text: "Сказать «спасибо»") ],
-            [ .init(text: "Статистика") ]
+            [ .init(text: MainMenuButton.sayThanks) ],
+            [ .init(text: MainMenuButton.feed), .init(text: MainMenuButton.jar) ],
+            [ .init(text: MainMenuButton.stats) ]
         ]
-        if isAdmin { rows.append([ .init(text: "Админка") ]) }
-        rows.append([ .init(text: "← Назад") ])
+        if isAdmin { rows.append([ .init(text: MainMenuButton.settings) ]) }
         return TgReplyKeyboard(
             keyboard: rows,
             resize_keyboard: true,
@@ -39,9 +41,8 @@ enum KeyboardBuilder {
     static func statisticsMenu() -> TgReplyKeyboard {
         TgReplyKeyboard(
             keyboard: [
-                [ .init(text: "Моя статистика") ],
-                [ .init(text: "Экспорт переданных") ],
-                [ .init(text: "Экспорт полученных") ],
+                [ .init(text: "📤 Выгрузить отправленные") ],
+                [ .init(text: "📥 Выгрузить полученные") ],
                 [ .init(text: "← Назад") ]
             ],
             resize_keyboard: true,
@@ -52,11 +53,11 @@ enum KeyboardBuilder {
     static func adminMenu() -> TgReplyKeyboard {
         TgReplyKeyboard(
             keyboard: [
-                [ .init(text: "👤 Добавить сотрудника") ],
+                [ .init(text: "👤 Добавить участника") ],
                 [ .init(text: "🔁 Привязка Telegram") ],
-                [ .init(text: "✏️ Редактировать ФИО") ],
-                [ .init(text: "🚫 Деактивировать сотрудника") ],
-                [ .init(text: "📁 Архив сотрудников") ],
+                [ .init(text: "✏️ Изменить имя") ],
+                [ .init(text: "🚫 Отключить участника") ],
+                [ .init(text: "📁 Отключённые") ],
                 [ .init(text: "📊 Экспорт CSV") ],
                 [ .init(text: "← Назад") ]
             ],
@@ -65,7 +66,7 @@ enum KeyboardBuilder {
         )
     }
 
-    /// Постраничный список сотрудников (по два имени в строке) + навигация
+    /// Постраничный список участников (по два имени в строке) + навигация
     static func employeesPage(names: [String], hasPrev: Bool, hasNext: Bool) -> TgReplyKeyboard {
         // Сетка 2×N: группируем имена по две кнопки в ряд
         var rows: [[TgReplyKeyboard.Button]] = []
@@ -141,18 +142,20 @@ enum KeyboardBuilder {
         )
     }
 
-    /// Клавиатура на шаге ввода причины: «Назад» и «Отмена»
-    static func reasonMenu() -> TgReplyKeyboard {
+    /// Клавиатура на шаге ввода текста: «Назад» (если был выбор из списка) и «Отмена»
+    static func reasonMenu(showBack: Bool = true) -> TgReplyKeyboard {
         TgReplyKeyboard(
             keyboard: [
-                [ .init(text: "← Назад"), .init(text: "Отмена") ]
+                showBack
+                    ? [ .init(text: "← Назад"), .init(text: "Отмена") ]
+                    : [ .init(text: "Отмена") ]
             ],
             resize_keyboard: true,
             one_time_keyboard: false
         )
     }
     
-    /// Клавиатура для возврата к списку сотрудников
+    /// Клавиатура для возврата к списку участников
     static func backToEmployeesList() -> TgReplyKeyboard {
         TgReplyKeyboard(
             keyboard: [
@@ -175,7 +178,7 @@ enum KeyboardBuilder {
         )
     }
 
-    /// Клавиатура шага привязки Telegram при добавлении сотрудника (админка)
+    /// Клавиатура шага привязки Telegram при добавлении участника (админка)
     static func adminAddForwardMenu() -> TgReplyKeyboard {
         TgReplyKeyboard(
             keyboard: [
@@ -191,7 +194,7 @@ enum KeyboardBuilder {
         TgReplyKeyboard(
             keyboard: [
                 [ .init(text: "✅ Восстановить") ],
-                [ .init(text: "🗑 Удалить из системы") ],
+                [ .init(text: "🗑 Удалить совсем") ],
                 [ .init(text: "← Назад") ]
             ],
             resize_keyboard: true,
@@ -255,5 +258,18 @@ enum KeyboardBuilder {
             resize_keyboard: true,
             one_time_keyboard: false
         )
+    }
+
+    // MARK: - Reactions
+
+    /// Варианты реакций на полученное спасибо (индекс уходит в callback_data)
+    static let reactions = ["❤️", "🤗", "🥹"]
+
+    /// Инлайн-кнопки реакций под уведомлением о новом спасибо
+    static func reactionsInline(kudosId: UUID) -> TgInlineKeyboardMarkup {
+        let buttons = reactions.enumerated().map { index, emoji in
+            TgInlineKeyboardMarkup.Button(text: emoji, callback_data: "react:\(index):\(kudosId.uuidString)")
+        }
+        return TgInlineKeyboardMarkup(inline_keyboard: [buttons])
     }
 }

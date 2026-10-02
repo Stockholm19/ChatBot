@@ -24,7 +24,7 @@ extension BotMenuController {
         return items[start..<end]
     }
     
-    /// Парсит выбор сотрудника из текста кнопки.
+    /// Парсит выбор участника из текста кнопки.
     /// Поддерживает формат "ФИО (N)" только для случаев, когда есть дубли ФИО.
     /// Возвращает базовое ФИО и порядковый номер (1-based), если он указан.
     static func parseEmployeeSelection(_ text: String) -> (name: String, index: Int?) {
@@ -59,7 +59,7 @@ extension BotMenuController {
             .first()
     }
     
-    /// Показывает страницу каталога сотрудников
+    /// Показывает страницу списка получателей (без самого пользователя)
     static func showEmployeesPage(
         app: Application,
         api: String,
@@ -69,13 +69,16 @@ extension BotMenuController {
         page: Int,
         editMessageId: Int? = nil
     ) async {
-        let data = await loadActiveEmployeesPage(db: db, page: page)
+        // В личном чате chatId совпадает с Telegram ID пользователя — себя в списке не показываем
+        let data = await loadActiveEmployeesPage(db: db, page: page, excludingTelegramId: chatId)
         let inlineOptions = data.slice.compactMap { emp -> KeyboardBuilder.EmployeeInlineOption? in
             guard let id = try? emp.requireID() else { return nil }
             return .init(id: id, title: data.titleById[id] ?? emp.fullName)
         }
 
-        let text = "Выберите сотрудника для благодарности: (стр. \(data.page + 1)/\(data.totalPages))"
+        let text = data.totalPages > 1
+            ? "Кому скажем спасибо? (стр. \(data.page + 1)/\(data.totalPages))"
+            : "Кому скажем спасибо?"
         let keyboard = KeyboardBuilder.employeesInlinePage(
             options: inlineOptions,
             hasPrev: data.page > 0,
@@ -100,12 +103,9 @@ extension BotMenuController {
         await sessions.set(chatId, session)
     }
 
-    static func loadActiveEmployeesPage(db: Database, page: Int) async -> (all: [Employee], slice: ArraySlice<Employee>, titleById: [UUID: String], page: Int, totalPages: Int) {
-        let all = (try? await Employee.query(on: db)
-            .filter(\.$isActive == true)
-            .filter(\.$telegramId != nil)
-            .sort(\.$fullName, .ascending)
-            .all()) ?? []
+    static func loadActiveEmployeesPage(db: Database, page: Int, excludingTelegramId: Int64? = nil) async -> (all: [Employee], slice: ArraySlice<Employee>, titleById: [UUID: String], page: Int, totalPages: Int) {
+        let all = ((try? await FluentEmployeesRepo(db: db).activeLinked()) ?? [])
+            .filter { excludingTelegramId == nil || $0.telegramId != excludingTelegramId }
 
         let per = 10
         let totalPages = max(1, Int(ceil(Double(all.count) / Double(per))))
@@ -192,7 +192,7 @@ extension BotMenuController {
         await sessions.set(chatId, session)
     }
 
-    /// Показывает страницу сотрудников (активных или архивных) для админа
+    /// Показывает страницу участников (активных или отключённых) для админа
     static func showAdminEmployeesPage(
         app: Application,
         api: String,
@@ -219,8 +219,8 @@ extension BotMenuController {
 
         let data = employeePageData(all: all, page: page)
         let title = active
-            ? "Кого деактивировать? (стр. \(data.page + 1)/\(data.totalPages))"
-            : "Кого вернуть из архива? (стр. \(data.page + 1)/\(data.totalPages))"
+            ? "Кого отключить? (стр. \(data.page + 1)/\(data.totalPages))"
+            : "Отключённые участники: (стр. \(data.page + 1)/\(data.totalPages))"
         let callbackPrefix = targetState == .adminDeactivateChoose ? "adm:deact" : "adm:arch"
 
         let activeMessageId = await sendAdminInlineList(
@@ -259,7 +259,7 @@ extension BotMenuController {
             app: app,
             api: api,
             chatId: chatId,
-            text: "Выберите сотрудника для привязки Telegram: (стр. \(data.page + 1)/\(data.totalPages))",
+            text: "Кому привязать Telegram? (стр. \(data.page + 1)/\(data.totalPages))",
             data: data,
             callbackPrefix: "adm:link",
             editMessageId: editMessageId
@@ -290,7 +290,7 @@ extension BotMenuController {
             app: app,
             api: api,
             chatId: chatId,
-            text: "Выберите сотрудника для редактирования ФИО: (стр. \(data.page + 1)/\(data.totalPages))",
+            text: "Чьё имя изменить? (стр. \(data.page + 1)/\(data.totalPages))",
             data: data,
             callbackPrefix: "adm:edit",
             editMessageId: editMessageId
@@ -322,7 +322,7 @@ extension BotMenuController {
             app: app,
             api: api,
             chatId: chatId,
-            text: "Выберите сотрудника для привязки Telegram: (стр. \(data.page + 1)/\(data.totalPages))",
+            text: "Кому привязать Telegram? (стр. \(data.page + 1)/\(data.totalPages))",
             data: data,
             callbackPrefix: "adm:bind",
             editMessageId: editMessageId
@@ -355,7 +355,7 @@ extension BotMenuController {
             app: app,
             api: api,
             chatId: chatId,
-            text: "Выберите сотрудника для изменения Telegram ID: (стр. \(data.page + 1)/\(data.totalPages))",
+            text: "Кому изменить Telegram? (стр. \(data.page + 1)/\(data.totalPages))",
             data: data,
             callbackPrefix: "adm:change",
             editMessageId: editMessageId

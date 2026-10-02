@@ -10,8 +10,8 @@ import Fluent
 
 enum BotMenuController {
 
-    // Минимальная длина текста благодарности
-    static let minReasonLength = 20
+    // Минимальная длина текста благодарности: короткое «спасибо за ужин» — тоже спасибо
+    static let minReasonLength = 3
 
     // MARK: - Roles
 
@@ -42,6 +42,8 @@ enum BotMenuController {
         app: Application,
         api: String,
         chatId: Int64,
+        userId: Int64?,
+        username: String?,
         sessions: SessionStore
     ) async {
         // Игнорируем группы и каналы: бот показывает меню только в личных чатах
@@ -49,18 +51,20 @@ enum BotMenuController {
             return
         }
 
-        await TelegramService.sendMessage(
-            app, api: api, chatId: chatId,
+        await showMainMenu(
+            app: app, api: api, chatId: chatId, sessions: sessions,
+            isUserAdmin: isAdmin(userId: userId, username: username),
             text: """
             Привет! 👋
 
-            С помощью этого бота ты можешь отправить благодарность коллеге — за поддержку, классные идеи или просто за хорошую работу. А еще здесь можно увидеть, сколько «спасибо» получил лично ты.
+            Это наш маленький бот для «спасибо». Говори спасибо за ужин, за поддержку, за то, что рядом, — а я передам и бережно всё сохраню.
 
-            Выбери действие:
-            """,
-            replyMarkup: KeyboardBuilder.mainMenu()
+            💌 <b>Сказать спасибо</b> — написать благодарность
+            📜 <b>Наши спасибо</b> — последние тёплые слова
+            🫙 <b>Вспомнить</b> — достать случайное спасибо из банки
+            📊 <b>Статистика</b> — сколько спасибо уже накопилось
+            """
         )
-        await sessions.set(chatId, Session(state: .mainMenu, to: nil))
     }
 
     static func handleMessage(
@@ -105,7 +109,7 @@ enum BotMenuController {
             return
         }
             
-        // Глобальная обработка возврата к списку сотрудников (как в оригинале)
+        // Глобальная обработка возврата к списку участников
         if t == "← Назад к списку" {
             await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             let page = session.page ?? 0
@@ -124,12 +128,10 @@ enum BotMenuController {
                   .adminDeactivateChoose, .adminDeactivateConfirm,
                   .adminEditNameChoose, .adminEditNameAsk, .adminEditNameConfirm,
                   .adminArchiveChoose, .adminArchiveActions, .adminArchiveConfirm, .adminArchiveDeleteConfirm:
-                await TelegramService.sendMessage(
-                    app, api: api, chatId: chatId,
-                    text: "Раздел администратора доступен только администраторам.",
-                    replyMarkup: KeyboardBuilder.mainMenu()
+                await showMainMenu(
+                    app: app, api: api, chatId: chatId, sessions: sessions, isUserAdmin: false,
+                    text: "Настройки доступны только администратору."
                 )
-                await sessions.set(chatId, Session(state: .mainMenu, to: nil))
                 return
             default:
                 break
@@ -138,9 +140,9 @@ enum BotMenuController {
 
         switch state {
         case .mainMenu:
-            await handleMainMenu(app: app, api: api, chatId: chatId, text: t, sessions: sessions, isUserAdmin: isUserAdmin)
+            await handleMainMenu(app: app, api: api, chatId: chatId, userId: userId, text: t, sessions: sessions, db: db, isUserAdmin: isUserAdmin)
             
-        case .thanksMenu, .choosingEmployee, .awaitingRecipient, .awaitingReason:
+        case .choosingEmployee, .awaitingRecipient, .awaitingReason:
             await handleThanksFlow(app: app, api: api, chatId: chatId, userId: userId, username: username, message: message, sessions: sessions, db: db, state: state, text: t, isUserAdmin: isUserAdmin)
             
         case .statisticsMenu:

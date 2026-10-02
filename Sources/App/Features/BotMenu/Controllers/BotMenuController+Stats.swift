@@ -21,38 +21,9 @@ extension BotMenuController {
     ) async {
         switch text {
         case "← Назад":
-            await sessions.set(chatId, Session(state: .thanksMenu))
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: "Меню благодарностей:",
-                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isUserAdmin)
-            )
+            await showMainMenu(app: app, api: api, chatId: chatId, sessions: sessions, isUserAdmin: isUserAdmin)
 
-        case "Моя статистика":
-            var sentTotal = 0
-            var receivedTotal = 0
-            if let tg = userId,
-               let me = try? await Employee.query(on: db)
-                   .filter(\.$telegramId == tg)
-                   .first(),
-               let meID = try? me.requireID() {
-
-                sentTotal = (try? await Kudos.query(on: db)
-                    .filter(\.$fromEmployee.$id == meID)
-                    .count()) ?? 0
-
-                receivedTotal = (try? await Kudos.query(on: db)
-                    .filter(\.$employee.$id == meID)
-                    .count()) ?? 0
-            }
-            let msg = "Твоя статистика:\nОтправлено: \(sentTotal)\nПолучено: \(receivedTotal)"
-            await TelegramService.sendMessage(
-                app, api: api, chatId: chatId,
-                text: msg,
-                replyMarkup: KeyboardBuilder.statisticsMenu()
-            )
-
-        case "Экспорт переданных":
+        case "📤 Выгрузить отправленные":
             var rows: [Kudos] = []
             if let tg = userId,
                let me = try? await Employee.query(on: db)
@@ -83,7 +54,7 @@ extension BotMenuController {
             if rows.isEmpty {
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
-                    text: "У тебя пока нет отправленных «спасибо» для экспорта.",
+                    text: "Ты пока не отправлял(а) спасибо — выгружать нечего 🙂",
                     replyMarkup: KeyboardBuilder.statisticsMenu()
                 )
                 return
@@ -99,17 +70,17 @@ extension BotMenuController {
                 try await TelegramService.sendDocument(
                     app, api: api, chatId: chatId,
                     filePath: tmpPath,
-                    caption: "Экспорт отправленных благодарностей"
+                    caption: "Все спасибо, которые ты отправил(а) 💌"
                 )
             } catch {
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
-                    text: "Не получилось создать или отправить экспорт отправленных благодарностей.",
+                    text: "Не получилось сделать выгрузку отправленных спасибо. Попробуй позже.",
                     replyMarkup: KeyboardBuilder.statisticsMenu()
                 )
             }
 
-        case "Экспорт полученных":
+        case "📥 Выгрузить полученные":
             var rows: [Kudos] = []
             if let tg = userId,
                let me = try? await Employee.query(on: db)
@@ -140,7 +111,7 @@ extension BotMenuController {
             if rows.isEmpty {
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
-                    text: "У тебя пока нет полученных «спасибо» для экспорта.",
+                    text: "Тебе пока не приходили спасибо — выгружать нечего 🙂",
                     replyMarkup: KeyboardBuilder.statisticsMenu()
                 )
                 return
@@ -156,12 +127,12 @@ extension BotMenuController {
                 try await TelegramService.sendDocument(
                     app, api: api, chatId: chatId,
                     filePath: tmpPath,
-                    caption: "Экспорт полученных благодарностей"
+                    caption: "Все спасибо, которые ты получил(а) 💛"
                 )
             } catch {
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
-                    text: "Не получилось создать или отправить экспорт полученных благодарностей.",
+                    text: "Не получилось сделать выгрузку полученных спасибо. Попробуй позже.",
                     replyMarkup: KeyboardBuilder.statisticsMenu()
                 )
             }
@@ -169,5 +140,44 @@ extension BotMenuController {
         default:
             break
         }
+    }
+
+    /// Показывает личную статистику и открывает меню выгрузок
+    static func showPersonalStats(
+        app: Application,
+        api: String,
+        chatId: Int64,
+        userId: Int64?,
+        sessions: SessionStore,
+        db: Database
+    ) async {
+        await sessions.set(chatId, Session(state: .statisticsMenu))
+
+        guard let me = await currentParticipant(userId: userId, db: db),
+              let meID = me.id,
+              let stats = try? await KudosService(db: db).stats(for: meID) else {
+            await TelegramService.sendMessage(
+                app, api: api, chatId: chatId,
+                text: "Статистики пока нет: твой Telegram не привязан к участнику.",
+                replyMarkup: KeyboardBuilder.statisticsMenu()
+            )
+            return
+        }
+
+        await TelegramService.sendMessage(
+            app, api: api, chatId: chatId,
+            text: formatStats(stats),
+            replyMarkup: KeyboardBuilder.statisticsMenu()
+        )
+    }
+
+    static func formatStats(_ stats: KudosService.PersonalStats) -> String {
+        """
+        📊 <b>Твоя статистика</b>
+
+        💌 Отправлено: \(stats.sentTotal) (за неделю: \(stats.sentLastWeek))
+        💛 Получено: \(stats.receivedTotal) (за неделю: \(stats.receivedLastWeek))
+        🤗 Ответов-реакций на твои спасибо: \(stats.reactionsOnSent)
+        """
     }
 }

@@ -10,49 +10,26 @@ import Vapor
 struct RemindersScheduler {
 
     static func setup(app: Application) {
-        guard let times = Environment.get("REMINDER_TIMES")?
-            .split(separator: ",")
-            .map({ $0.trimmingCharacters(in: .whitespaces) }),
-              !times.isEmpty else {
+        let times = ClockScheduler.TimeOfDay.list(Environment.get("REMINDER_TIMES"))
+        guard !times.isEmpty else {
             app.logger.info("RemindersScheduler: REMINDER_TIMES not set or empty, skipping reminders.")
             return
         }
-
-        let service = RemindersService(app: app)
-
-        app.logger.info("RemindersScheduler: initialized. times=\(times.joined(separator: ","))")
-        
-        // Проверка сообщением при запуске Docker контейнера
-        // app.logger.info("RemindersScheduler: sending startup reminder once...")
-        // service.sendRandomReminder()
-
-        for time in times {
-            app.logger.info("RemindersScheduler: scheduling reminder for \(time)")
-            schedule(for: time, service: service, app: app)
-        }
-    }
-
-    private static func schedule(for time: String,
-                                 service: RemindersService,
-                                 app: Application)
-    {
-        let parts = time.split(separator: ":")
-        guard parts.count == 2,
-              let hour = Int(parts[0]),
-              let minute = Int(parts[1]) else {
-            app.logger.warning("RemindersScheduler: wrong REMINDER_TIMES format: \(time)")
+        guard let api = TelegramService.apiBaseURL() else {
+            app.logger.warning("RemindersScheduler: BOT_TOKEN is empty, skipping reminders.")
             return
         }
 
-        app.eventLoopGroup.next().scheduleRepeatedTask(
-            initialDelay: .seconds(3),
-            delay: .minutes(1)
-        ) { _ in
-            let now = Date()
-            let cal = Calendar.current
-            if cal.component(.hour, from: now) == hour &&
-               cal.component(.minute, from: now) == minute {
-                service.sendRandomReminder()
+        let service = RemindersService(
+            app: app,
+            api: api,
+            messages: RemindersService.loadMessages(app: app)
+        )
+
+        for time in times {
+            app.logger.info("RemindersScheduler: scheduling personal reminders at \(time.hour):\(String(format: "%02d", time.minute))")
+            ClockScheduler.schedule(app: app, at: time) {
+                await service.sendReminders()
             }
         }
     }

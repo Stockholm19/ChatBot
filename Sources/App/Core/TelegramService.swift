@@ -51,14 +51,19 @@ public struct TgReplyKeyboardRemove: Content {
 
 public enum TelegramService {
 
+    /// Базовый URL Bot API из переменной окружения BOT_TOKEN
+    static func apiBaseURL() -> String? {
+        guard let token = Environment.get("BOT_TOKEN"), !token.isEmpty else { return nil }
+        return "https://api.telegram.org/bot\(token)"
+    }
+
     // MARK: Polling getUpdates
     public static func poll(app: Application, sessions: SessionStore) async {
-        guard let token = Environment.get("BOT_TOKEN") else {
+        guard let api = apiBaseURL() else {
             app.logger.critical("BOT_TOKEN is not set")
             await app.pollingHealthStore.markPollError("BOT_TOKEN is not set")
             return
         }
-        let api = "https://api.telegram.org/bot\(token)"
         var offset = 0
 
         while !Task.isCancelled {

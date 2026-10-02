@@ -14,6 +14,8 @@ protocol EmployeesRepo {
     func get(_ id: UUID) async throws -> Employee?
     /// Lookup employee by Telegram user ID
     func findByTelegramId(_ tgId: Int64) async throws -> Employee?
+    /// Активные участники с привязанным Telegram (те, кому бот может писать)
+    func activeLinked() async throws -> [Employee]
 }
 
 struct FluentEmployeesRepo: EmployeesRepo {
@@ -54,5 +56,13 @@ struct FluentEmployeesRepo: EmployeesRepo {
         try await Employee.query(on: db)
             .filter(\.$telegramId == tgId)
             .first()
+    }
+
+    func activeLinked() async throws -> [Employee] {
+        try await Employee.query(on: db)
+            .filter(\.$isActive == true)
+            .filter(\.$telegramId != nil)
+            .sort(\.$fullName, .ascending)
+            .all()
     }
 }

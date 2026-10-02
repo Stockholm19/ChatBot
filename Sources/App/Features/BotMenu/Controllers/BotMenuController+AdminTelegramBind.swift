@@ -55,7 +55,7 @@ extension BotMenuController {
             var session = await sessions.get(chatId) ?? Session()
             session.state = .adminMenu
             await sessions.set(chatId, session)
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Раздел администратора:", replyMarkup: KeyboardBuilder.adminMenu())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Настройки:", replyMarkup: KeyboardBuilder.adminMenu())
         }
     }
 
@@ -107,7 +107,7 @@ extension BotMenuController {
                 await sessions.set(chatId, session)
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
-                    text: "Выбран сотрудник: \(emp.fullName)\nTelegram не указан. Перешли сообщение от сотрудника.\nЕсли Telegram скрыт в пересылках, нажмите «🔗 Получить код» и отправьте его сотруднику.",
+                    text: Self.bindPromptText(name: emp.fullName),
                     replyMarkup: KeyboardBuilder.adminTelegramForwardMenuBind()
                 )
             }
@@ -190,7 +190,7 @@ extension BotMenuController {
 
                 await TelegramService.sendMessage(
                     app, api: api, chatId: chatId,
-                    text: "Выбран сотрудник: \(emp.fullName)\n\(currentTgText)\n\nПерешли сообщение от аккаунта сотрудника.\nЕсли Telegram скрыт, нажмите «🔗 Получить код».",
+                    text: Self.changePromptText(name: emp.fullName, currentTgText: currentTgText),
                     replyMarkup: KeyboardBuilder.adminTelegramForwardMenuChange()
                 )
             }
@@ -234,7 +234,7 @@ extension BotMenuController {
         } else if text == "← Назад" {
             await closeActiveInlineList(app: app, api: api, chatId: chatId, sessions: sessions)
             await sessions.set(chatId, Session(state: .adminMenu))
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Настройки:", replyMarkup: KeyboardBuilder.adminMenu())
         } else {
             let sel = parseEmployeeSelection(trimmed)
             if let emp = try? await Employee.query(on: db).filter(\.$telegramId == nil).filter(\.$fullName == sel.name).first(),
@@ -275,10 +275,10 @@ extension BotMenuController {
         guard !code.isEmpty else { return }
         try? await PendingLink(code: code, employeeId: empId, createdByAdminTgId: userId, expiresAt: Date().addingTimeInterval(6*3600)).save(on: db)
         let msg = """
-        Код для <b>\(emp.fullName)</b>:
+        Код для <b>\(emp.fullName.htmlEscaped)</b>:
         <code>/link \(code)</code>
 
-        Отправь эту команду сотруднику. Он должен:
+        Отправь эту команду-приглашение. Нужно:
         1) Открыть чат с ботом
         2) Нажать на команду выше (или скопировать) и отправить
 
@@ -297,7 +297,7 @@ extension BotMenuController {
             let conflictingName = conflictingEmp.fullName
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "Этот Telegram уже привязан к сотруднику \(conflictingName).\nВыберите другой аккаунт или сначала измените привязку у другого сотрудника.",
+                text: Self.telegramConflictText(name: conflictingName),
                 replyMarkup: KeyboardBuilder.adminTelegramForwardMenuBind()
             )
             return
@@ -308,7 +308,7 @@ extension BotMenuController {
         try? await PendingLink.query(on: db).filter(\.$employee.$id == empId).delete()
         await TelegramService.sendMessage(
             app, api: api, chatId: chatId,
-            text: "✅ Telegram успешно привязан для \(emp.fullName)",
+            text: "✅ Telegram привязан: \(emp.fullName.htmlEscaped)",
             replyMarkup: KeyboardBuilder.adminTelegramMenu()
         )
         await sessions.set(chatId, Session(state: .adminTelegramMenu))
@@ -322,7 +322,7 @@ extension BotMenuController {
             let conflictingName = conflictingEmp.fullName
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
-                text: "Этот Telegram уже привязан к сотруднику \(conflictingName).\nВыберите другой аккаунт или сначала измените привязку у другого сотрудника.",
+                text: Self.telegramConflictText(name: conflictingName),
                 replyMarkup: KeyboardBuilder.adminTelegramForwardMenuChange()
             )
             return
@@ -338,7 +338,7 @@ extension BotMenuController {
 
         await TelegramService.sendMessage(
             app, api: api, chatId: chatId,
-            text: "✅ Telegram ID обновлен для \(emp.fullName)",
+            text: "✅ Telegram обновлён: \(emp.fullName.htmlEscaped)",
             replyMarkup: KeyboardBuilder.adminTelegramMenu()
         )
 

@@ -19,4 +19,5 @@ public func migrations(_ app: Application) {
     app.migrations.add(AddFromEmployeeIdToKudos())
     app.migrations.add(CreatePendingLinks())
     app.migrations.add(AddCreatedAtToEmployees())
+    app.migrations.add(AddReactionToKudos())
 }

@@ -63,6 +63,7 @@ public func configure(_ app: Application) throws {
     // Планировщики — отключаем в тестовом окружении
     if app.environment != .testing {
         RemindersScheduler.setup(app: app)
+        WeeklyDigestScheduler.setup(app: app)
         PendingLinksScheduler.setup(app: app)
     }
 }

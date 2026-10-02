@@ -53,6 +53,20 @@ extension BotMenuController {
         let session = await sessions.get(chatId) ?? Session(state: .mainMenu)
         let data = (query.data ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // Реакции на спасибо не зависят от текущего шага диалога
+        if let reaction = parseReactionCallback(data) {
+            await handleReactionCallback(
+                app: app,
+                api: api,
+                query: query,
+                callbackMessage: callbackMessage,
+                kudosId: reaction.kudosId,
+                emoji: reaction.emoji,
+                db: db
+            )
+            return
+        }
+
         guard let (scope, action) = parseCallbackData(data) else {
             await TelegramService.answerCallbackQuery(app, api: api, callbackQueryId: query.id)
             return
@@ -125,18 +139,11 @@ extension BotMenuController {
                 api: api,
                 chatId: chatId,
                 messageId: callbackMessage.message_id,
-                text: "Выбор сотрудника закрыт.",
+                text: "Выбор закрыт.",
                 inlineMarkup: nil
             )
             let isUserAdmin = isAdmin(userId: query.from.id, username: query.from.username)
-            await sessions.set(chatId, Session(state: .thanksMenu))
-            await TelegramService.sendMessage(
-                app,
-                api: api,
-                chatId: chatId,
-                text: "Меню благодарностей:",
-                replyMarkup: KeyboardBuilder.thanksMenu(isAdmin: isUserAdmin)
-            )
+            await showMainMenu(app: app, api: api, chatId: chatId, sessions: sessions, isUserAdmin: isUserAdmin)
 
         case .pick(let employeeId):
             guard let employee = try? await Employee.find(employeeId, on: db),
@@ -146,7 +153,7 @@ extension BotMenuController {
                     app,
                     api: api,
                     callbackQueryId: query.id,
-                    text: "Сотрудник недоступен. Обновите список.",
+                    text: "Этот участник сейчас недоступен. Открой список заново.",
                     showAlert: true
                 )
                 return
@@ -162,7 +169,7 @@ extension BotMenuController {
                     app,
                     api: api,
                     callbackQueryId: query.id,
-                    text: "Нельзя отправить спасибо самому себе 🙂",
+                    text: "Себе спасибо тоже важно говорить, но здесь — только другим 🙂",
                     showAlert: true
                 )
                 return
@@ -174,19 +181,13 @@ extension BotMenuController {
                 api: api,
                 chatId: chatId,
                 messageId: callbackMessage.message_id,
-                text: "Выбран сотрудник: \(employee.fullName)",
+                text: "Кому: \(employee.fullName.htmlEscaped)",
                 inlineMarkup: nil
             )
 
             let currentPage = (await sessions.get(chatId))?.page
-            await sessions.set(chatId, Session(state: .awaitingReason, to: nil, page: currentPage, chosenEmployeeId: employeeId))
-            await TelegramService.sendMessage(
-                app,
-                api: api,
-                chatId: chatId,
-                text: "Напиши короткое сообщение, за что \(employee.fullName) получит благодарность. 🌟 (от \(minReasonLength) символов)",
-                replyMarkup: KeyboardBuilder.reasonMenu()
-            )
+            await sessions.set(chatId, Session(state: .awaitingReason, page: currentPage ?? 0, chosenEmployeeId: employeeId))
+            await askForReason(app: app, api: api, chatId: chatId, recipientName: employee.fullName, canGoBack: true)
         }
     }
 
@@ -227,7 +228,7 @@ extension BotMenuController {
                 inlineMarkup: nil
             )
             await sessions.set(chatId, Session(state: .adminMenu))
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Админка:", replyMarkup: KeyboardBuilder.adminMenu())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Настройки:", replyMarkup: KeyboardBuilder.adminMenu())
 
         case .pick(let employeeId):
             await handleAdminPick(
@@ -287,7 +288,7 @@ extension BotMenuController {
                 app,
                 api: api,
                 callbackQueryId: query.id,
-                text: "Сотрудник не найден.",
+                text: "Участник не найден.",
                 showAlert: true
             )
             return
@@ -304,7 +305,7 @@ extension BotMenuController {
             api: api,
             chatId: chatId,
             messageId: callbackMessage.message_id,
-            text: "Выбран сотрудник: \(emp.fullName)",
+            text: "Участник: \(emp.fullName.htmlEscaped)",
             inlineMarkup: nil
         )
 
@@ -312,12 +313,12 @@ extension BotMenuController {
         case .adminDeactivate:
             session.state = .adminDeactivateConfirm
             await sessions.set(chatId, session)
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Деактивировать \(emp.fullName)?", replyMarkup: KeyboardBuilder.yesNo())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Отключить \(emp.fullName.htmlEscaped)? Бот перестанет ему писать, история сохранится.", replyMarkup: KeyboardBuilder.yesNo())
 
         case .adminArchive:
             session.state = .adminArchiveActions
             await sessions.set(chatId, session)
-            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Выбран сотрудник: \(emp.fullName)\nЧто сделать?", replyMarkup: KeyboardBuilder.adminArchiveActionsMenu())
+            await TelegramService.sendMessage(app, api: api, chatId: chatId, text: "Участник: \(emp.fullName.htmlEscaped)\nЧто сделать?", replyMarkup: KeyboardBuilder.adminArchiveActionsMenu())
 
         case .adminEditName:
             session.state = .adminEditNameAsk
@@ -327,7 +328,7 @@ extension BotMenuController {
                 app,
                 api: api,
                 chatId: chatId,
-                text: "Текущее ФИО: \(emp.fullName)\n\nВведи новое ФИО (например: Иванов Иван)",
+                text: "Сейчас: \(emp.fullName.htmlEscaped)\n\nКак теперь подписывать участника?",
                 replyMarkup: KeyboardBuilder.back()
             )
 
@@ -338,7 +339,7 @@ extension BotMenuController {
                 app,
                 api: api,
                 chatId: chatId,
-                text: "Выбран сотрудник: \(emp.fullName)\nTelegram не указан. Перешли сообщение от сотрудника.\nЕсли Telegram скрыт в пересылках, нажмите «🔗 Получить код» и отправьте его сотруднику.",
+                text: Self.bindPromptText(name: emp.fullName),
                 replyMarkup: KeyboardBuilder.adminTelegramForwardMenuBind()
             )
 
@@ -350,7 +351,7 @@ extension BotMenuController {
                 app,
                 api: api,
                 chatId: chatId,
-                text: "Выбран сотрудник: \(emp.fullName)\n\(currentTgText)\n\nПерешли сообщение от аккаунта сотрудника.\nЕсли Telegram скрыт, нажмите «🔗 Получить код».",
+                text: Self.changePromptText(name: emp.fullName, currentTgText: currentTgText),
                 replyMarkup: KeyboardBuilder.adminTelegramForwardMenuChange()
             )
 
