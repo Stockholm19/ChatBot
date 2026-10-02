@@ -23,6 +23,31 @@ enum KeyboardBuilder {
         static let settings = "⚙️ Настройки"
     }
 
+    /// Действие главного меню по тексту нажатой кнопки.
+    /// Входящий текст роутер нормализует (`normalizedNav` убирает U+FE0F из «⚙️»),
+    /// поэтому сравниваем тоже нормализованные заголовки.
+    enum MainMenuAction: CaseIterable {
+        case sayThanks, feed, jar, stats, settings
+
+        var title: String {
+            switch self {
+            case .sayThanks: return MainMenuButton.sayThanks
+            case .feed: return MainMenuButton.feed
+            case .jar: return MainMenuButton.jar
+            case .stats: return MainMenuButton.stats
+            case .settings: return MainMenuButton.settings
+            }
+        }
+
+        init?(text: String) {
+            let normalized = text.normalizedNav
+            guard let action = Self.allCases.first(where: { $0.title.normalizedNav == normalized }) else {
+                return nil
+            }
+            self = action
+        }
+    }
+
     /// Единое главное меню: все основные действия на одном экране
     static func mainMenu(isAdmin: Bool) -> TgReplyKeyboard {
         var rows: [[TgReplyKeyboard.Button]] = [

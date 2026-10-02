@@ -43,6 +43,24 @@ final class KeyboardBuilderTests: XCTestCase {
         ])
     }
 
+    /// Каждая кнопка главного меню распознаётся после нормализации, которую делает роутер.
+    /// Регрессия: «⚙️ Настройки» содержит U+FE0F, который normalizedNav вырезает.
+    func testEveryMainMenuButtonIsRoutableAfterNormalization() throws {
+        let rows = KeyboardBuilder.mainMenu(isAdmin: true).keyboard
+        let expected: [KeyboardBuilder.MainMenuAction] = [.sayThanks, .feed, .jar, .stats, .settings]
+        let actions = rows.flatMap { $0.map { KeyboardBuilder.MainMenuAction(text: $0.text.normalizedNav) } }
+        XCTAssertEqual(actions, expected)
+        XCTAssertNil(KeyboardBuilder.MainMenuAction(text: "Передать спасибо"), "Старая кнопка не должна совпадать")
+    }
+
+    /// Все кнопки админского меню тоже должны переживать нормализацию
+    func testAdminMenuButtonsSurviveNormalization() throws {
+        let texts = KeyboardBuilder.adminMenu().keyboard.flatMap { $0.map { $0.text.normalizedNav } }
+        for keyword in ["Добавить участника", "Привязка Telegram", "Изменить имя", "Отключить участника", "Отключённые", "📊 Экспорт CSV", "← Назад"] {
+            XCTAssertTrue(texts.contains { $0.contains(keyword) || $0 == keyword }, "Не найдено после нормализации: \(keyword)")
+        }
+    }
+
     // MARK: - employeesPage(names:hasPrev:hasNext:)
 
     /// Постраничный список: имена по 2 в строке + навигация и «Назад»

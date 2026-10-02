@@ -35,20 +35,20 @@ extension BotMenuController {
         db: Database,
         isUserAdmin: Bool
     ) async {
-        switch text {
-        case KeyboardBuilder.MainMenuButton.sayThanks:
+        switch KeyboardBuilder.MainMenuAction(text: text) {
+        case .sayThanks:
             await startThanksFlow(app: app, api: api, chatId: chatId, userId: userId, sessions: sessions, db: db, isUserAdmin: isUserAdmin)
 
-        case KeyboardBuilder.MainMenuButton.feed:
+        case .feed:
             await showFeed(app: app, api: api, chatId: chatId, userId: userId, db: db, isUserAdmin: isUserAdmin)
 
-        case KeyboardBuilder.MainMenuButton.jar:
+        case .jar:
             await showRandomFromJar(app: app, api: api, chatId: chatId, userId: userId, db: db, isUserAdmin: isUserAdmin)
 
-        case KeyboardBuilder.MainMenuButton.stats:
+        case .stats:
             await showPersonalStats(app: app, api: api, chatId: chatId, userId: userId, sessions: sessions, db: db)
 
-        case KeyboardBuilder.MainMenuButton.settings where isUserAdmin:
+        case .settings where isUserAdmin:
             await sessions.set(chatId, Session(state: .adminMenu))
             await TelegramService.sendMessage(
                 app, api: api, chatId: chatId,
